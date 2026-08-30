@@ -1,0 +1,2164 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+<meta name="apple-mobile-web-app-title" content="Ivrit" />
+<meta name="theme-color" content="#7C2032" />
+<link rel="apple-touch-icon" href="icon.png" />
+<link rel="manifest" href="manifest.json" />
+<title>Aprender Hebraico</title>
+<script src="vendor/react.production.min.js"></script>
+<script src="vendor/react-dom.production.min.js"></script>
+<script src="vendor/babel.min.js"></script>
+<script>
+/* Correção necessária no WKWebView do iOS: o preset "react" padrão do
+   Babel Standalone tenta usar import() dinâmico para carregar plugins,
+   o que o WebView do Capacitor não suporta. Registramos um preset
+   equivalente manualmente, sem import(). */
+Babel.registerPreset("react-classic", {
+  plugins: [
+    [Babel.availablePlugins["transform-react-jsx"], { runtime: "classic" }]
+  ]
+});
+</script>
+<style>
+  html, body { margin: 0; padding: 0; background: #E7DEC3; }
+  #root { min-height: 100vh; }
+  #boot-error {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: #7C2032;
+    color: #FBF6E9;
+    font-family: -apple-system, sans-serif;
+    padding: 24px;
+    box-sizing: border-box;
+    overflow: auto;
+    z-index: 9999;
+    white-space: pre-wrap;
+    font-size: 14px;
+    line-height: 1.5;
+  }
+</style>
+</head>
+<body>
+<div id="root"></div>
+<div id="boot-error"></div>
+
+<script>
+window.addEventListener("error", function (e) {
+  var box = document.getElementById("boot-error");
+  if (!box) return;
+  box.style.display = "block";
+  box.textContent =
+    "Ocorreu um erro ao carregar o app:\n\n" +
+    (e.message || "erro desconhecido") +
+    (e.filename ? "\n\nArquivo: " + e.filename + ":" + e.lineno : "");
+});
+
+window.storage = {
+  get: function (key) {
+    return new Promise(function (resolve) {
+      try {
+        var raw = localStorage.getItem("hs_" + key);
+        if (raw === null) { resolve(null); return; }
+        resolve({ key: key, value: raw, shared: false });
+      } catch (e) { resolve(null); }
+    });
+  },
+  set: function (key, value) {
+    return new Promise(function (resolve) {
+      try {
+        localStorage.setItem("hs_" + key, value);
+        resolve({ key: key, value: value, shared: false });
+      } catch (e) { resolve(null); }
+    });
+  },
+  delete: function (key) {
+    return new Promise(function (resolve) {
+      try {
+        localStorage.removeItem("hs_" + key);
+        resolve({ key: key, deleted: true, shared: false });
+      } catch (e) { resolve(null); }
+    });
+  },
+  list: function (prefix) {
+    return new Promise(function (resolve) {
+      try {
+        var p = "hs_" + (prefix || "");
+        var keys = Object.keys(localStorage)
+          .filter(function (k) { return k.indexOf(p) === 0; })
+          .map(function (k) { return k.slice(3); });
+        resolve({ keys: keys, prefix: prefix, shared: false });
+      } catch (e) { resolve(null); }
+    });
+  }
+};
+</script>
+
+<script type="text/babel" data-presets="react-classic">
+try {
+  const { useState, useEffect, useCallback } = React;
+
+  /* ---------------------------------------------------------
+   Dados: categorias e cartas (50 por pasta)
+--------------------------------------------------------- */
+const CATEGORIES = [
+  {
+    id: "frutas",
+    name: "Frutas",
+    icon: "🍎",
+    nameLoc: { pt: "Frutas", en: "Fruits", es: "Frutas", it: "Frutta" },
+    glyph: "ת",
+    nameHe: "פירות",
+    accent: "#7C2032",
+    words: [
+      { he: "תפוח", tr: "tapuach", pt: "maçã", es: "manzana", en: "apple", it: "mela" },
+      { he: "בננה", tr: "banana", pt: "banana", es: "banana", en: "banana", it: "banana" },
+      { he: "תפוז", tr: "tapuz", pt: "laranja", es: "naranja", en: "orange", it: "arancia" },
+      { he: "ענבים", tr: "anavim", pt: "uvas", es: "uvas", en: "grapes", it: "uva" },
+      { he: "אבטיח", tr: "avatiach", pt: "melancia", es: "sandía", en: "watermelon", it: "anguria" },
+      { he: "תות", tr: "tut", pt: "morango", es: "fresa", en: "strawberry", it: "fragola" },
+      { he: "אננס", tr: "ananas", pt: "abacaxi", es: "piña", en: "pineapple", it: "ananas" },
+      { he: "אגס", tr: "agas", pt: "pera", es: "pera", en: "pear", it: "pera" },
+      { he: "לימון", tr: "limon", pt: "limão", es: "limón", en: "lemon", it: "limone" },
+      { he: "אפרסק", tr: "afarsek", pt: "pêssego", es: "durazno", en: "peach", it: "pesca" },
+      { he: "מנגו", tr: "mango", pt: "manga", es: "mango", en: "mango", it: "mango" },
+      { he: "מלון", tr: "melon", pt: "melão", es: "melón", en: "melon", it: "melone" },
+      { he: "דובדבן", tr: "duvdevan", pt: "cereja", es: "cereza", en: "cherry", it: "ciliegia" },
+      { he: "תאנה", tr: "te'ena", pt: "figo", es: "higo", en: "fig", it: "fico" },
+      { he: "קוקוס", tr: "kokos", pt: "coco", es: "coco", en: "coconut", it: "cocco" },
+      { he: "אשכולית", tr: "eshkolit", pt: "toranja", es: "pomelo", en: "grapefruit", it: "pompelmo" },
+      { he: "קלמנטינה", tr: "klementina", pt: "clementina", es: "clementina", en: "clementine", it: "clementina" },
+      { he: "שזיף", tr: "shezif", pt: "ameixa", es: "ciruela", en: "plum", it: "prugna" },
+      { he: "רימון", tr: "rimon", pt: "romã", es: "granada", en: "pomegranate", it: "melagrana" },
+      { he: "פפאיה", tr: "papaya", pt: "mamão", es: "papaya", en: "papaya", it: "papaya" },
+      { he: "קיווי", tr: "kiwi", pt: "kiwi", es: "kiwi", en: "kiwi", it: "kiwi" },
+      { he: "ליים", tr: "laim", pt: "lima", es: "lima", en: "lime", it: "lime" },
+      { he: "משמש", tr: "mishmesh", pt: "damasco", es: "albaricoque", en: "apricot", it: "albicocca" },
+      { he: "פומלה", tr: "pomela", pt: "pomelo grande", es: "pomelo", en: "pomelo", it: "pummelo" },
+      { he: "חבוש", tr: "chabush", pt: "marmelo", es: "membrillo", en: "quince", it: "mela cotogna" },
+      { he: "שסק", tr: "sheseq", pt: "níspera", es: "níspero", en: "loquat", it: "nespola" },
+      { he: "תמר", tr: "tamar", pt: "tâmara", es: "dátil", en: "date", it: "dattero" },
+      { he: "אוכמניות", tr: "uchmaniyot", pt: "mirtilos", es: "arándanos", en: "blueberries", it: "mirtilli" },
+      { he: "פטל", tr: "petel", pt: "framboesa", es: "frambuesa", en: "raspberry", it: "lampone" },
+      { he: "דומדמנית", tr: "dumdemanit", pt: "groselha", es: "grosella", en: "gooseberry", it: "uva spina" },
+      { he: "אבוקדו", tr: "avocado", pt: "abacate", es: "aguacate", en: "avocado", it: "avocado" },
+      { he: "גויאבה", tr: "guava", pt: "goiaba", es: "guayaba", en: "guava", it: "guava" },
+      { he: "מנגוסטן", tr: "mangostan", pt: "mangostão", es: "mangostán", en: "mangosteen", it: "mangostano" },
+      { he: "פסיפלורה", tr: "passiflora", pt: "maracujá", es: "maracuyá", en: "passion fruit", it: "frutto della passione" },
+      { he: "ליצ'י", tr: "litchi", pt: "lichia", es: "lichi", en: "lychee", it: "litchi" },
+      { he: "שקד", tr: "shaked", pt: "amêndoa", es: "almendra", en: "almond", it: "mandorla" },
+      { he: "אגוז", tr: "egoz", pt: "noz", es: "nuez", en: "walnut", it: "noce" },
+      { he: "בוטן", tr: "boten", pt: "amendoim", es: "maní", en: "peanut", it: "arachide" },
+      { he: "קשיו", tr: "kashiu", pt: "castanha-de-caju", es: "anacardo", en: "cashew", it: "anacardo" },
+      { he: "פקאן", tr: "pekan", pt: "noz-pecã", es: "pecana", en: "pecan", it: "noce pecan" },
+      { he: "פיסטוק", tr: "pistuk", pt: "pistache", es: "pistacho", en: "pistachio", it: "pistacchio" },
+      { he: "צימוק", tr: "tsimuk", pt: "passas", es: "pasas", en: "raisin", it: "uvetta" },
+      { he: "תות עץ", tr: "tut ets", pt: "amora", es: "mora", en: "mulberry", it: "mora di gelso" },
+      { he: "אפרסמון", tr: "afarsemon", pt: "caqui", es: "caqui", en: "persimmon", it: "cachi" },
+      { he: "צבר", tr: "tsabar", pt: "figo-da-índia", es: "higo chumbo", en: "prickly pear", it: "fico d'India" },
+      { he: "אגס סיני", tr: "agas sini", pt: "pera asiática", es: "pera asiática", en: "asian pear", it: "pera asiatica" },
+      { he: "קומקוואט", tr: "kumkvat", pt: "kumquat", es: "kumquat", en: "kumquat", it: "kumquat" },
+      { he: "קרמבולה", tr: "karambola", pt: "carambola", es: "carambola", en: "starfruit", it: "carambola" },
+      { he: "דוריאן", tr: "durian", pt: "durian", es: "durián", en: "durian", it: "durian" },
+      { he: "רמבוטן", tr: "rambutan", pt: "rambutan", es: "rambután", en: "rambutan", it: "rambutan" },
+    ],
+  },
+  {
+    id: "verbos",
+    name: "Verbos",
+    icon: "🏃",
+    nameLoc: { pt: "Verbos", en: "Verbs", es: "Verbos", it: "Verbi" },
+    glyph: "פ",
+    nameHe: "פעלים",
+    accent: "#1B4A52",
+    words: [
+      { he: "לאכול", tr: "le'echol", pt: "comer", es: "comer", en: "to eat", it: "mangiare" },
+      { he: "לשתות", tr: "lishtot", pt: "beber", es: "beber", en: "to drink", it: "bere" },
+      { he: "ללכת", tr: "lalechet", pt: "andar", es: "caminar", en: "to walk", it: "camminare" },
+      { he: "לרוץ", tr: "laruts", pt: "correr", es: "correr", en: "to run", it: "correre" },
+      { he: "לישון", tr: "lishon", pt: "dormir", es: "dormir", en: "to sleep", it: "dormire" },
+      { he: "לקרוא", tr: "likro", pt: "ler", es: "leer", en: "to read", it: "leggere" },
+      { he: "לכתוב", tr: "lichtov", pt: "escrever", es: "escribir", en: "to write", it: "scrivere" },
+      { he: "לדבר", tr: "ledaber", pt: "falar", es: "hablar", en: "to speak", it: "parlare" },
+      { he: "לראות", tr: "lir'ot", pt: "ver", es: "ver", en: "to see", it: "vedere" },
+      { he: "לשמוע", tr: "lishmoa", pt: "ouvir", es: "oír", en: "to hear", it: "sentire" },
+      { he: "ללמוד", tr: "lilmod", pt: "estudar", es: "estudiar", en: "to study", it: "studiare" },
+      { he: "לעבוד", tr: "la'avod", pt: "trabalhar", es: "trabajar", en: "to work", it: "lavorare" },
+      { he: "לקנות", tr: "liknot", pt: "comprar", es: "comprar", en: "to buy", it: "comprare" },
+      { he: "לשחק", tr: "lesachek", pt: "brincar", es: "jugar", en: "to play", it: "giocare" },
+      { he: "לאהוב", tr: "le'ehov", pt: "amar", es: "amar", en: "to love", it: "amare" },
+      { he: "לרקוד", tr: "lirkod", pt: "dançar", es: "bailar", en: "to dance", it: "ballare" },
+      { he: "לשיר", tr: "lashir", pt: "cantar", es: "cantar", en: "to sing", it: "cantare" },
+      { he: "לצייר", tr: "letsayer", pt: "desenhar", es: "dibujar", en: "to draw", it: "disegnare" },
+      { he: "לבשל", tr: "levashel", pt: "cozinhar", es: "cocinar", en: "to cook", it: "cucinare" },
+      { he: "לנקות", tr: "lenakot", pt: "limpar", es: "limpiar", en: "to clean", it: "pulire" },
+      { he: "למכור", tr: "limkor", pt: "vender", es: "vender", en: "to sell", it: "vendere" },
+      { he: "לפתוח", tr: "liftoach", pt: "abrir", es: "abrir", en: "to open", it: "aprire" },
+      { he: "לסגור", tr: "lisgor", pt: "fechar", es: "cerrar", en: "to close", it: "chiudere" },
+      { he: "לשבת", tr: "lashevet", pt: "sentar", es: "sentarse", en: "to sit", it: "sedersi" },
+      { he: "לקום", tr: "lakum", pt: "levantar", es: "levantarse", en: "to get up", it: "alzarsi" },
+      { he: "לעצור", tr: "la'atsor", pt: "parar", es: "parar", en: "to stop", it: "fermarsi" },
+      { he: "להתחיל", tr: "lehatchil", pt: "começar", es: "empezar", en: "to begin", it: "iniziare" },
+      { he: "לגמור", tr: "ligmor", pt: "terminar", es: "terminar", en: "to finish", it: "finire" },
+      { he: "לחשוב", tr: "lachshov", pt: "pensar", es: "pensar", en: "to think", it: "pensare" },
+      { he: "לזכור", tr: "lizkor", pt: "lembrar", es: "recordar", en: "to remember", it: "ricordare" },
+      { he: "לשכוח", tr: "lishko'ach", pt: "esquecer", es: "olvidar", en: "to forget", it: "dimenticare" },
+      { he: "להבין", tr: "lehavin", pt: "entender", es: "entender", en: "to understand", it: "capire" },
+      { he: "לדעת", tr: "lada'at", pt: "saber", es: "saber", en: "to know", it: "sapere" },
+      { he: "לחיות", tr: "lichyot", pt: "viver", es: "vivir", en: "to live", it: "vivere" },
+      { he: "למות", tr: "lamut", pt: "morrer", es: "morir", en: "to die", it: "morire" },
+      { he: "לבכות", tr: "livkot", pt: "chorar", es: "llorar", en: "to cry", it: "piangere" },
+      { he: "לצחוק", tr: "litschok", pt: "rir", es: "reír", en: "to laugh", it: "ridere" },
+      { he: "לעזור", tr: "la'azor", pt: "ajudar", es: "ayudar", en: "to help", it: "aiutare" },
+      { he: "לשלוח", tr: "lishloach", pt: "enviar", es: "enviar", en: "to send", it: "inviare" },
+      { he: "לקבל", tr: "lekabel", pt: "receber", es: "recibir", en: "to receive", it: "ricevere" },
+      { he: "לתת", tr: "latet", pt: "dar", es: "dar", en: "to give", it: "dare" },
+      { he: "לקחת", tr: "lakachat", pt: "pegar", es: "tomar", en: "to take", it: "prendere" },
+      { he: "לנסוע", tr: "linso'a", pt: "viajar", es: "viajar", en: "to travel", it: "viaggiare" },
+      { he: "לטוס", tr: "latus", pt: "voar", es: "volar", en: "to fly", it: "volare" },
+      { he: "לשחות", tr: "lisechot", pt: "nadar", es: "nadar", en: "to swim", it: "nuotare" },
+      { he: "לצלם", tr: "letsalem", pt: "fotografar", es: "fotografiar", en: "to photograph", it: "fotografare" },
+      { he: "להתלבש", tr: "lehitlabesh", pt: "vestir-se", es: "vestirse", en: "to get dressed", it: "vestirsi" },
+      { he: "להתקלח", tr: "lehitkalach", pt: "tomar banho", es: "ducharse", en: "to shower", it: "fare la doccia" },
+      { he: "לחכות", tr: "lechakot", pt: "esperar", es: "esperar", en: "to wait", it: "aspettare" },
+      { he: "לבוא", tr: "lavo", pt: "vir", es: "venir", en: "to come", it: "venire" },
+    ],
+  },
+  {
+    id: "roupas",
+    name: "Roupas",
+    icon: "👕",
+    nameLoc: { pt: "Roupas", en: "Clothes", es: "Ropa", it: "Vestiti" },
+    glyph: "ח",
+    nameHe: "בגדים",
+    accent: "#B8863B",
+    words: [
+      { he: "חולצה", tr: "chultsa", pt: "camisa", es: "camisa", en: "shirt", it: "camicia" },
+      { he: "מכנסיים", tr: "michnasayim", pt: "calça", es: "pantalón", en: "pants", it: "pantaloni" },
+      { he: "שמלה", tr: "simla", pt: "vestido", es: "vestido", en: "dress", it: "vestito" },
+      { he: "נעליים", tr: "na'alayim", pt: "sapatos", es: "zapatos", en: "shoes", it: "scarpe" },
+      { he: "כובע", tr: "kova", pt: "chapéu", es: "sombrero", en: "hat", it: "cappello" },
+      { he: "מעיל", tr: "me'il", pt: "casaco", es: "abrigo", en: "coat", it: "cappotto" },
+      { he: "גרביים", tr: "garbayim", pt: "meias", es: "calcetines", en: "socks", it: "calzini" },
+      { he: "חצאית", tr: "chatsa'it", pt: "saia", es: "falda", en: "skirt", it: "gonna" },
+      { he: "חגורה", tr: "chagora", pt: "cinto", es: "cinturón", en: "belt", it: "cintura" },
+      { he: "עניבה", tr: "aniva", pt: "gravata", es: "corbata", en: "tie", it: "cravatta" },
+      { he: "פיג'מה", tr: "pijama", pt: "pijama", es: "pijama", en: "pajamas", it: "pigiama" },
+      { he: "בגד ים", tr: "beged yam", pt: "maiô", es: "traje de baño", en: "swimsuit", it: "costume da bagno" },
+      { he: "כפפות", tr: "kfafot", pt: "luvas", es: "guantes", en: "gloves", it: "guanti" },
+      { he: "משקפיים", tr: "mishkafayim", pt: "óculos", es: "gafas", en: "glasses", it: "occhiali" },
+      { he: "תיק", tr: "tik", pt: "bolsa", es: "bolso", en: "bag", it: "borsa" },
+      { he: "מכנסיים קצרים", tr: "michnasayim ktsarim", pt: "bermuda", es: "pantalón corto", en: "shorts", it: "pantaloncini" },
+      { he: "חולצת טי", tr: "chultsat ti", pt: "camiseta", es: "camiseta", en: "t-shirt", it: "maglietta" },
+      { he: "סוודר", tr: "sveder", pt: "suéter", es: "suéter", en: "sweater", it: "maglione" },
+      { he: "ג'ינס", tr: "jins", pt: "jeans", es: "jeans", en: "jeans", it: "jeans" },
+      { he: "עניבת פרפר", tr: "anivat parpar", pt: "gravata-borboleta", es: "pajarita", en: "bow tie", it: "papillon" },
+      { he: "צעיף", tr: "tsa'if", pt: "cachecol", es: "bufanda", en: "scarf", it: "sciarpa" },
+      { he: "שרוול", tr: "sharvul", pt: "manga", es: "manga", en: "sleeve", it: "manica" },
+      { he: "כפתור", tr: "kaftor", pt: "botão", es: "botón", en: "button", it: "bottone" },
+      { he: "רוכסן", tr: "rochsan", pt: "zíper", es: "cremallera", en: "zipper", it: "cerniera" },
+      { he: "תחתונים", tr: "tachtonim", pt: "roupa íntima", es: "ropa interior", en: "underwear", it: "biancheria intima" },
+      { he: "חזייה", tr: "chaziya", pt: "sutiã", es: "sostén", en: "bra", it: "reggiseno" },
+      { he: "כתונת לילה", tr: "ktonet layla", pt: "camisola", es: "camisón", en: "nightgown", it: "camicia da notte" },
+      { he: "חלוק", tr: "chaluk", pt: "roupão", es: "bata", en: "robe", it: "vestaglia" },
+      { he: "סנדלים", tr: "sandalim", pt: "sandálias", es: "sandalias", en: "sandals", it: "sandali" },
+      { he: "מגפיים", tr: "magafayim", pt: "botas", es: "botas", en: "boots", it: "stivali" },
+      { he: "כפכפים", tr: "kafkafim", pt: "chinelos", es: "chanclas", en: "flip-flops", it: "infradito" },
+      { he: "אפודה", tr: "apuda", pt: "moletom com capuz", es: "sudadera con capucha", en: "hoodie", it: "felpa con cappuccio" },
+      { he: "ז'קט", tr: "jaket", pt: "jaqueta", es: "chaqueta", en: "jacket", it: "giacca" },
+      { he: "חליפה", tr: "chalifa", pt: "terno", es: "traje", en: "suit", it: "abito da uomo" },
+      { he: "כובע גרב", tr: "kova gerev", pt: "gorro", es: "gorro", en: "beanie", it: "berretto" },
+      { he: "צווארון", tr: "tsavaron", pt: "colarinho", es: "cuello", en: "collar", it: "colletto" },
+      { he: "מכנס טרנינג", tr: "michnas trening", pt: "calça de moletom", es: "pantalón deportivo", en: "sweatpants", it: "pantaloni della tuta" },
+      { he: "משקפי שמש", tr: "mishkafey shemesh", pt: "óculos de sol", es: "gafas de sol", en: "sunglasses", it: "occhiali da sole" },
+      { he: "שעון יד", tr: "sha'on yad", pt: "relógio de pulso", es: "reloj de pulsera", en: "wristwatch", it: "orologio da polso" },
+      { he: "טבעת", tr: "taba'at", pt: "anel", es: "anillo", en: "ring", it: "anello" },
+      { he: "שרשרת", tr: "sharsheret", pt: "colar", es: "collar", en: "necklace", it: "collana" },
+      { he: "עגיל", tr: "agil", pt: "brinco", es: "pendiente", en: "earring", it: "orecchino" },
+      { he: "צמיד", tr: "tsamid", pt: "pulseira", es: "pulsera", en: "bracelet", it: "braccialetto" },
+      { he: "סינר", tr: "sinar", pt: "avental", es: "delantal", en: "apron", it: "grembiule" },
+      { he: "מטפחת", tr: "mitpachat", pt: "lenço", es: "pañuelo", en: "headscarf", it: "fazzoletto" },
+      { he: "גופייה", tr: "gufiya", pt: "camiseta regata", es: "camiseta interior", en: "undershirt", it: "canottiera" },
+      { he: "בגד גוף", tr: "beged guf", pt: "body", es: "body", en: "bodysuit", it: "body" },
+      { he: "מדים", tr: "madim", pt: "uniforme", es: "uniforme", en: "uniform", it: "uniforme" },
+      { he: "סרבל", tr: "sarbal", pt: "macacão", es: "mono", en: "overalls", it: "tuta da lavoro" },
+      { he: "רדיד", tr: "radid", pt: "xale", es: "chal", en: "shawl", it: "scialle" },
+    ],
+  },
+  {
+    id: "moveis",
+    name: "Móveis",
+    icon: "🛋️",
+    nameLoc: { pt: "Móveis", en: "Furniture", es: "Muebles", it: "Mobili" },
+    glyph: "ש",
+    nameHe: "רהיטים",
+    accent: "#5C3A21",
+    words: [
+      { he: "שולחן", tr: "shulchan", pt: "mesa", es: "mesa", en: "table", it: "tavolo" },
+      { he: "כיסא", tr: "kise", pt: "cadeira", es: "silla", en: "chair", it: "sedia" },
+      { he: "מיטה", tr: "mita", pt: "cama", es: "cama", en: "bed", it: "letto" },
+      { he: "ספה", tr: "sapa", pt: "sofá", es: "sofá", en: "couch", it: "divano" },
+      { he: "ארון", tr: "aron", pt: "armário", es: "armario", en: "wardrobe", it: "armadio" },
+      { he: "מדף", tr: "madaf", pt: "prateleira", es: "estante", en: "shelf", it: "mensola" },
+      { he: "מראה", tr: "mar'a", pt: "espelho", es: "espejo", en: "mirror", it: "specchio" },
+      { he: "מנורה", tr: "menora", pt: "abajur", es: "lámpara", en: "lamp", it: "lampada" },
+      { he: "שטיח", tr: "shatiach", pt: "tapete", es: "alfombra", en: "rug", it: "tappeto" },
+      { he: "תנור", tr: "tanur", pt: "forno", es: "horno", en: "oven", it: "forno" },
+      { he: "אמבטיה", tr: "ambatya", pt: "banheira", es: "bañera", en: "bathtub", it: "vasca da bagno" },
+      { he: "כיור", tr: "kiyor", pt: "pia", es: "lavabo", en: "sink", it: "lavandino" },
+      { he: "מקרר", tr: "mekarer", pt: "geladeira", es: "refrigerador", en: "refrigerator", it: "frigorifero" },
+      { he: "מכונת כביסה", tr: "mechonat kvisa", pt: "máquina de lavar", es: "lavadora", en: "washing machine", it: "lavatrice" },
+      { he: "שידה", tr: "shida", pt: "cômoda", es: "cómoda", en: "dresser", it: "cassettiera" },
+      { he: "כרית", tr: "karit", pt: "travesseiro", es: "almohada", en: "pillow", it: "cuscino" },
+      { he: "שמיכה", tr: "smicha", pt: "cobertor", es: "manta", en: "blanket", it: "coperta" },
+      { he: "וילון", tr: "vilon", pt: "cortina", es: "cortina", en: "curtain", it: "tenda" },
+      { he: "שולחן קפה", tr: "shulchan kafe", pt: "mesa de centro", es: "mesa de centro", en: "coffee table", it: "tavolino da caffè" },
+      { he: "כורסה", tr: "kursa", pt: "poltrona", es: "sillón", en: "armchair", it: "poltrona" },
+      { he: "ארון ספרים", tr: "aron sfarim", pt: "estante de livros", es: "librero", en: "bookcase", it: "libreria" },
+      { he: "שולחן כתיבה", tr: "shulchan ktiva", pt: "escrivaninha", es: "escritorio", en: "desk", it: "scrivania" },
+      { he: "מיקרוגל", tr: "mikrogal", pt: "micro-ondas", es: "microondas", en: "microwave", it: "microonde" },
+      { he: "כיריים", tr: "kirayim", pt: "fogão", es: "estufa", en: "stovetop", it: "fornello" },
+      { he: "מדיח כלים", tr: "meadiach kelim", pt: "lava-louças", es: "lavavajillas", en: "dishwasher", it: "lavastoviglie" },
+      { he: "ברז", tr: "berez", pt: "torneira", es: "grifo", en: "faucet", it: "rubinetto" },
+      { he: "אסלה", tr: "asla", pt: "vaso sanitário", es: "inodoro", en: "toilet", it: "water" },
+      { he: "מקלחת", tr: "miklachat", pt: "chuveiro", es: "ducha", en: "shower", it: "doccia" },
+      { he: "מגבת", tr: "magevet", pt: "toalha", es: "toalla", en: "towel", it: "asciugamano" },
+      { he: "שעון קיר", tr: "sha'on kir", pt: "relógio de parede", es: "reloj de pared", en: "wall clock", it: "orologio da parete" },
+      { he: "שרפרף", tr: "shrafraf", pt: "banquinho", es: "taburete", en: "stool", it: "sgabello" },
+      { he: "ספסל", tr: "safsal", pt: "banco", es: "banco", en: "bench", it: "panca" },
+      { he: "ארגז", tr: "argaz", pt: "baú", es: "caja", en: "chest", it: "baule" },
+      { he: "מנורת שולחן", tr: "menorat shulchan", pt: "abajur de mesa", es: "lámpara de mesa", en: "table lamp", it: "lampada da tavolo" },
+      { he: "עריסה", tr: "arisa", pt: "berço", es: "cuna", en: "crib", it: "culla" },
+      { he: "כיסא נדנדה", tr: "kise nadneda", pt: "cadeira de balanço", es: "mecedora", en: "rocking chair", it: "sedia a dondolo" },
+      { he: "מזנון", tr: "miznon", pt: "aparador", es: "aparador", en: "sideboard", it: "credenza" },
+      { he: "ויטרינה", tr: "vitrina", pt: "vitrine", es: "vitrina", en: "display cabinet", it: "vetrina" },
+      { he: "כרית נוי", tr: "karit noi", pt: "almofada decorativa", es: "cojín decorativo", en: "cushion", it: "cuscino decorativo" },
+      { he: "מתלה", tr: "matleh", pt: "cabide", es: "percha", en: "coat rack", it: "attaccapanni" },
+      { he: "מזרון", tr: "mizron", pt: "colchão", es: "colchón", en: "mattress", it: "materasso" },
+      { he: "שולחן אוכל", tr: "shulchan ochel", pt: "mesa de jantar", es: "mesa de comedor", en: "dining table", it: "tavolo da pranzo" },
+      { he: "טלוויזיה", tr: "televizia", pt: "televisão", es: "televisión", en: "television", it: "televisione" },
+      { he: "רמקול", tr: "ramkol", pt: "alto-falante", es: "altavoz", en: "speaker", it: "altoparlante" },
+      { he: "מזגן", tr: "mazgan", pt: "ar-condicionado", es: "aire acondicionado", en: "air conditioner", it: "condizionatore" },
+      { he: "שואב אבק", tr: "sho'ev avak", pt: "aspirador de pó", es: "aspiradora", en: "vacuum cleaner", it: "aspirapolvere" },
+      { he: "טוסטר", tr: "toster", pt: "torradeira", es: "tostadora", en: "toaster", it: "tostapane" },
+      { he: "קומקום", tr: "kumkum", pt: "chaleira", es: "tetera", en: "kettle", it: "bollitore" },
+      { he: "מחבת", tr: "machavat", pt: "frigideira", es: "sartén", en: "frying pan", it: "padella" },
+      { he: "סיר", tr: "sir", pt: "panela", es: "olla", en: "pot", it: "pentola" },
+    ],
+  },
+  {
+    id: "animais",
+    name: "Animais",
+    icon: "🐾",
+    nameLoc: { pt: "Animais", en: "Animals", es: "Animales", it: "Animali" },
+    glyph: "כ",
+    nameHe: "חיות",
+    accent: "#2F5233",
+    words: [
+      { he: "כלב", tr: "kelev", pt: "cachorro", es: "perro", en: "dog", it: "cane" },
+      { he: "חתול", tr: "chatul", pt: "gato", es: "gato", en: "cat", it: "gatto" },
+      { he: "ציפור", tr: "tsipor", pt: "pássaro", es: "pájaro", en: "bird", it: "uccello" },
+      { he: "דג", tr: "dag", pt: "peixe", es: "pez", en: "fish", it: "pesce" },
+      { he: "סוס", tr: "sus", pt: "cavalo", es: "caballo", en: "horse", it: "cavallo" },
+      { he: "פרה", tr: "para", pt: "vaca", es: "vaca", en: "cow", it: "mucca" },
+      { he: "אריה", tr: "aryeh", pt: "leão", es: "león", en: "lion", it: "leone" },
+      { he: "דוב", tr: "dov", pt: "urso", es: "oso", en: "bear", it: "orso" },
+      { he: "פיל", tr: "pil", pt: "elefante", es: "elefante", en: "elephant", it: "elefante" },
+      { he: "נמר", tr: "namer", pt: "leopardo", es: "leopardo", en: "leopard", it: "leopardo" },
+      { he: "ארנב", tr: "arnav", pt: "coelho", es: "conejo", en: "rabbit", it: "coniglio" },
+      { he: "עכבר", tr: "achbar", pt: "rato", es: "ratón", en: "mouse", it: "topo" },
+      { he: "נחש", tr: "nachash", pt: "cobra", es: "serpiente", en: "snake", it: "serpente" },
+      { he: "קוף", tr: "kof", pt: "macaco", es: "mono", en: "monkey", it: "scimmia" },
+      { he: "כבשה", tr: "kivsa", pt: "ovelha", es: "oveja", en: "sheep", it: "pecora" },
+      { he: "תרנגול", tr: "tarnegol", pt: "galo", es: "gallo", en: "rooster", it: "gallo" },
+      { he: "תרנגולת", tr: "tarnegolet", pt: "galinha", es: "gallina", en: "hen", it: "gallina" },
+      { he: "ברווז", tr: "barvaz", pt: "pato", es: "pato", en: "duck", it: "anatra" },
+      { he: "אווז", tr: "avaz", pt: "ganso", es: "ganso", en: "goose", it: "oca" },
+      { he: "עז", tr: "ez", pt: "cabra", es: "cabra", en: "goat", it: "capra" },
+      { he: "חזיר", tr: "chazir", pt: "porco", es: "cerdo", en: "pig", it: "maiale" },
+      { he: "צב", tr: "tsav", pt: "tartaruga", es: "tortuga", en: "turtle", it: "tartaruga" },
+      { he: "צפרדע", tr: "tsfardea", pt: "sapo", es: "rana", en: "frog", it: "rana" },
+      { he: "דבורה", tr: "dvora", pt: "abelha", es: "abeja", en: "bee", it: "ape" },
+      { he: "פרפר", tr: "parpar", pt: "borboleta", es: "mariposa", en: "butterfly", it: "farfalla" },
+      { he: "נמלה", tr: "nemala", pt: "formiga", es: "hormiga", en: "ant", it: "formica" },
+      { he: "עכביש", tr: "akavish", pt: "aranha", es: "araña", en: "spider", it: "ragno" },
+      { he: "זבוב", tr: "zvuv", pt: "mosca", es: "mosca", en: "fly", it: "mosca" },
+      { he: "יתוש", tr: "yatush", pt: "mosquito", es: "mosquito", en: "mosquito", it: "zanzara" },
+      { he: "כריש", tr: "karish", pt: "tubarão", es: "tiburón", en: "shark", it: "squalo" },
+      { he: "לווייתן", tr: "livyatan", pt: "baleia", es: "ballena", en: "whale", it: "balena" },
+      { he: "דולפין", tr: "dolfin", pt: "golfinho", es: "delfín", en: "dolphin", it: "delfino" },
+      { he: "תמנון", tr: "tamnun", pt: "polvo", es: "pulpo", en: "octopus", it: "polpo" },
+      { he: "סרטן", tr: "sartan", pt: "caranguejo", es: "cangrejo", en: "crab", it: "granchio" },
+      { he: "זברה", tr: "zebra", pt: "zebra", es: "cebra", en: "zebra", it: "zebra" },
+      { he: "ג'ירפה", tr: "jirafa", pt: "girafa", es: "jirafa", en: "giraffe", it: "giraffa" },
+      { he: "קנגורו", tr: "kangaru", pt: "canguru", es: "canguro", en: "kangaroo", it: "canguro" },
+      { he: "פנדה", tr: "panda", pt: "panda", es: "panda", en: "panda", it: "panda" },
+      { he: "זאב", tr: "ze'ev", pt: "lobo", es: "lobo", en: "wolf", it: "lupo" },
+      { he: "שועל", tr: "shu'al", pt: "raposa", es: "zorro", en: "fox", it: "volpe" },
+      { he: "קיפוד", tr: "kipod", pt: "ouriço", es: "erizo", en: "hedgehog", it: "riccio" },
+      { he: "סנאי", tr: "snai", pt: "esquilo", es: "ardilla", en: "squirrel", it: "scoiattolo" },
+      { he: "עטלף", tr: "atalef", pt: "morcego", es: "murciélago", en: "bat", it: "pipistrello" },
+      { he: "ינשוף", tr: "yanshuf", pt: "coruja", es: "búho", en: "owl", it: "gufo" },
+      { he: "נשר", tr: "nesher", pt: "águia", es: "águila", en: "eagle", it: "aquila" },
+      { he: "תוכי", tr: "tuki", pt: "papagaio", es: "loro", en: "parrot", it: "pappagallo" },
+      { he: "חמור", tr: "chamor", pt: "burro", es: "burro", en: "donkey", it: "asino" },
+      { he: "גמל", tr: "gamal", pt: "camelo", es: "camello", en: "camel", it: "cammello" },
+      { he: "דג זהב", tr: "dag zahav", pt: "peixinho dourado", es: "pez dorado", en: "goldfish", it: "pesce rosso" },
+      { he: "תן", tr: "tan", pt: "chacal", es: "chacal", en: "jackal", it: "sciacallo" },
+    ],
+  },
+  {
+    id: "cores",
+    name: "Cores",
+    icon: "🎨",
+    nameLoc: { pt: "Cores", en: "Colors", es: "Colores", it: "Colori" },
+    glyph: "צ",
+    nameHe: "צבעים",
+    accent: "#8B2F5E",
+    words: [
+      { he: "אדום", tr: "adom", pt: "vermelho", es: "rojo", en: "red", it: "rosso" },
+      { he: "כחול", tr: "kachol", pt: "azul", es: "azul", en: "blue", it: "blu" },
+      { he: "ירוק", tr: "yarok", pt: "verde", es: "verde", en: "green", it: "verde" },
+      { he: "צהוב", tr: "tsahov", pt: "amarelo", es: "amarillo", en: "yellow", it: "giallo" },
+      { he: "שחור", tr: "shachor", pt: "preto", es: "negro", en: "black", it: "nero" },
+      { he: "לבן", tr: "lavan", pt: "branco", es: "blanco", en: "white", it: "bianco" },
+      { he: "כתום", tr: "katom", pt: "laranja", es: "naranja", en: "orange", it: "arancione" },
+      { he: "ורוד", tr: "varod", pt: "rosa", es: "rosa", en: "pink", it: "rosa" },
+      { he: "סגול", tr: "sagol", pt: "roxo", es: "morado", en: "purple", it: "viola" },
+      { he: "חום", tr: "chum", pt: "marrom", es: "marrón", en: "brown", it: "marrone" },
+      { he: "אפור", tr: "afor", pt: "cinza", es: "gris", en: "gray", it: "grigio" },
+      { he: "זהוב", tr: "zahov", pt: "dourado", es: "dorado", en: "golden", it: "dorato" },
+      { he: "תכלת", tr: "tchelet", pt: "azul-claro", es: "celeste", en: "light blue", it: "azzurro" },
+      { he: "כחול כהה", tr: "kachol keihe", pt: "azul escuro", es: "azul oscuro", en: "dark blue", it: "blu scuro" },
+      { he: "ירוק כהה", tr: "yarok keihe", pt: "verde escuro", es: "verde oscuro", en: "dark green", it: "verde scuro" },
+      { he: "ירוק בהיר", tr: "yarok bahir", pt: "verde claro", es: "verde claro", en: "light green", it: "verde chiaro" },
+      { he: "אדום כהה", tr: "adom keihe", pt: "vermelho escuro", es: "rojo oscuro", en: "dark red", it: "rosso scuro" },
+      { he: "ורוד בהיר", tr: "varod bahir", pt: "rosa claro", es: "rosa claro", en: "light pink", it: "rosa chiaro" },
+      { he: "כסף", tr: "kesef", pt: "prateado", es: "plateado", en: "silver", it: "argento" },
+      { he: "ברונזה", tr: "bronza", pt: "bronze", es: "bronce", en: "bronze", it: "bronzo" },
+      { he: "בז'", tr: "bez", pt: "bege", es: "beige", en: "beige", it: "beige" },
+      { he: "טורקיז", tr: "turkiz", pt: "turquesa", es: "turquesa", en: "turquoise", it: "turchese" },
+      { he: "לילך", tr: "lilach", pt: "lilás", es: "lila", en: "lilac", it: "lilla" },
+      { he: "מנטה", tr: "menta", pt: "verde-menta", es: "verde menta", en: "mint green", it: "verde menta" },
+      { he: "חרדל", tr: "chardal", pt: "mostarda", es: "mostaza", en: "mustard", it: "senape" },
+      { he: "בורדו", tr: "bordo", pt: "bordô", es: "burdeos", en: "burgundy", it: "bordeaux" },
+      { he: "קורל", tr: "koral", pt: "coral", es: "coral", en: "coral", it: "corallo" },
+      { he: "זית", tr: "zayit", pt: "verde-oliva", es: "verde oliva", en: "olive green", it: "verde oliva" },
+      { he: "שנהב", tr: "shenhav", pt: "marfim", es: "marfil", en: "ivory", it: "avorio" },
+      { he: "שמנת", tr: "shamenet", pt: "creme", es: "crema", en: "cream", it: "crema" },
+      { he: "חום כהה", tr: "chum keihe", pt: "marrom escuro", es: "marrón oscuro", en: "dark brown", it: "marrone scuro" },
+      { he: "חום בהיר", tr: "chum bahir", pt: "marrom claro", es: "marrón claro", en: "light brown", it: "marrone chiaro" },
+      { he: "אפור כהה", tr: "afor keihe", pt: "cinza escuro", es: "gris oscuro", en: "dark gray", it: "grigio scuro" },
+      { he: "אפור בהיר", tr: "afor bahir", pt: "cinza claro", es: "gris claro", en: "light gray", it: "grigio chiaro" },
+      { he: "כתום כהה", tr: "katom keihe", pt: "laranja escuro", es: "naranja oscuro", en: "dark orange", it: "arancione scuro" },
+      { he: "אינדיגו", tr: "indigo", pt: "índigo", es: "índigo", en: "indigo", it: "indaco" },
+      { he: "מג'נטה", tr: "magenta", pt: "magenta", es: "magenta", en: "magenta", it: "magenta" },
+      { he: "פוקסיה", tr: "fuksia", pt: "pink-choque", es: "fucsia", en: "fuchsia", it: "fucsia" },
+      { he: "אדמדם", tr: "adamdam", pt: "avermelhado", es: "rojizo", en: "reddish", it: "rossastro" },
+      { he: "ירקרק", tr: "yerakrak", pt: "esverdeado", es: "verdoso", en: "greenish", it: "verdastro" },
+      { he: "כחלחל", tr: "kechalchal", pt: "azulado", es: "azulado", en: "bluish", it: "azzurrognolo" },
+      { he: "שקוף", tr: "shakuf", pt: "transparente", es: "transparente", en: "transparent", it: "trasparente" },
+      { he: "זהב ורד", tr: "zahav vered", pt: "ouro rosé", es: "oro rosa", en: "rose gold", it: "oro rosa" },
+      { he: "חאקי", tr: "chaki", pt: "cáqui", es: "caqui", en: "khaki", it: "kaki" },
+      { he: "פחם", tr: "pecham", pt: "cor de carvão", es: "color carbón", en: "charcoal", it: "color carbone" },
+      { he: "ורדרד", tr: "vardrad", pt: "rosado", es: "rosado", en: "rosy", it: "rosato" },
+      { he: "פלטינה", tr: "platina", pt: "platina", es: "platino", en: "platinum", it: "platino" },
+      { he: "כחול ים", tr: "kachol yam", pt: "azul-marinho", es: "azul marino", en: "navy blue", it: "blu navy" },
+      { he: "סגול כהה", tr: "sagol keihe", pt: "roxo escuro", es: "morado oscuro", en: "dark purple", it: "viola scuro" },
+      { he: "צהוב לימון", tr: "tsahov limon", pt: "amarelo-limão", es: "amarillo limón", en: "lemon yellow", it: "giallo limone" },
+    ],
+  },
+  {
+    id: "familia",
+    name: "Família",
+    icon: "👪",
+    nameLoc: { pt: "Família", en: "Family", es: "Familia", it: "Famiglia" },
+    glyph: "א",
+    nameHe: "משפחה",
+    accent: "#6B4226",
+    words: [
+      { he: "אמא", tr: "ima", pt: "mãe", es: "mamá", en: "mother", it: "mamma" },
+      { he: "אבא", tr: "aba", pt: "pai", es: "papá", en: "father", it: "papà" },
+      { he: "אח", tr: "ach", pt: "irmão", es: "hermano", en: "brother", it: "fratello" },
+      { he: "אחות", tr: "achot", pt: "irmã", es: "hermana", en: "sister", it: "sorella" },
+      { he: "סבא", tr: "saba", pt: "avô", es: "abuelo", en: "grandfather", it: "nonno" },
+      { he: "סבתא", tr: "savta", pt: "avó", es: "abuela", en: "grandmother", it: "nonna" },
+      { he: "בן", tr: "ben", pt: "filho", es: "hijo", en: "son", it: "figlio" },
+      { he: "בת", tr: "bat", pt: "filha", es: "hija", en: "daughter", it: "figlia" },
+      { he: "דוד", tr: "dod", pt: "tio", es: "tío", en: "uncle", it: "zio" },
+      { he: "דודה", tr: "doda", pt: "tia", es: "tía", en: "aunt", it: "zia" },
+      { he: "בן דוד", tr: "ben dod", pt: "primo", es: "primo", en: "cousin", it: "cugino" },
+      { he: "בעל", tr: "ba'al", pt: "marido", es: "esposo", en: "husband", it: "marito" },
+      { he: "אישה", tr: "isha", pt: "esposa", es: "esposa", en: "wife", it: "moglie" },
+      { he: "נכד", tr: "neched", pt: "neto", es: "nieto", en: "grandson", it: "nipote" },
+      { he: "נכדה", tr: "nechda", pt: "neta", es: "nieta", en: "granddaughter", it: "nipote" },
+      { he: "בת דודה", tr: "bat doda", pt: "prima", es: "prima", en: "cousin (f)", it: "cugina" },
+      { he: "גיס", tr: "gis", pt: "cunhado", es: "cuñado", en: "brother-in-law", it: "cognato" },
+      { he: "גיסה", tr: "gisa", pt: "cunhada", es: "cuñada", en: "sister-in-law", it: "cognata" },
+      { he: "חם", tr: "cham", pt: "sogro", es: "suegro", en: "father-in-law", it: "suocero" },
+      { he: "חמות", tr: "chamot", pt: "sogra", es: "suegra", en: "mother-in-law", it: "suocera" },
+      { he: "חתן", tr: "chatan", pt: "noivo", es: "novio", en: "groom", it: "sposo" },
+      { he: "כלה", tr: "kala", pt: "noiva", es: "novia", en: "bride", it: "sposa" },
+      { he: "תינוק", tr: "tinok", pt: "bebê", es: "bebé", en: "baby", it: "bebè" },
+      { he: "ילד", tr: "yeled", pt: "menino", es: "niño", en: "boy", it: "bambino" },
+      { he: "ילדה", tr: "yalda", pt: "menina", es: "niña", en: "girl", it: "bambina" },
+      { he: "מבוגר", tr: "mevugar", pt: "adulto", es: "adulto", en: "adult", it: "adulto" },
+      { he: "בן זוג", tr: "ben zug", pt: "parceiro", es: "pareja", en: "partner (m)", it: "partner" },
+      { he: "בת זוג", tr: "bat zug", pt: "parceira", es: "pareja", en: "partner (f)", it: "partner" },
+      { he: "הורים", tr: "horim", pt: "pais", es: "padres", en: "parents", it: "genitori" },
+      { he: "אחים", tr: "achim", pt: "irmãos", es: "hermanos", en: "siblings", it: "fratelli" },
+      { he: "משפחה", tr: "mishpacha", pt: "família", es: "familia", en: "family", it: "famiglia" },
+      { he: "סבא רבא", tr: "saba raba", pt: "bisavô", es: "bisabuelo", en: "great-grandfather", it: "bisnonno" },
+      { he: "סבתא רבתא", tr: "savta rabta", pt: "bisavó", es: "bisabuela", en: "great-grandmother", it: "bisnonna" },
+      { he: "נין", tr: "nin", pt: "bisneto", es: "bisnieto", en: "great-grandson", it: "pronipote" },
+      { he: "אח חורג", tr: "ach choreg", pt: "meio-irmão", es: "hermanastro", en: "stepbrother", it: "fratellastro" },
+      { he: "אחות חורגת", tr: "achot choreget", pt: "meia-irmã", es: "hermanastra", en: "stepsister", it: "sorellastra" },
+      { he: "אב חורג", tr: "av choreg", pt: "padrasto", es: "padrastro", en: "stepfather", it: "patrigno" },
+      { he: "אם חורגת", tr: "em choreget", pt: "madrasta", es: "madrastra", en: "stepmother", it: "matrigna" },
+      { he: "בן חורג", tr: "ben choreg", pt: "enteado", es: "hijastro", en: "stepson", it: "figliastro" },
+      { he: "בת חורגת", tr: "bat choreget", pt: "enteada", es: "hijastra", en: "stepdaughter", it: "figliastra" },
+      { he: "תאום", tr: "te'om", pt: "gêmeo", es: "gemelo", en: "twin", it: "gemello" },
+      { he: "קרוב משפחה", tr: "karov mishpacha", pt: "parente", es: "pariente", en: "relative", it: "parente" },
+      { he: "אלמן", tr: "alman", pt: "viúvo", es: "viudo", en: "widower", it: "vedovo" },
+      { he: "אלמנה", tr: "almana", pt: "viúva", es: "viuda", en: "widow", it: "vedova" },
+      { he: "רווק", tr: "ravak", pt: "solteiro", es: "soltero", en: "single (m)", it: "single" },
+      { he: "רווקה", tr: "ravaka", pt: "solteira", es: "soltera", en: "single (f)", it: "single" },
+      { he: "נשוי", tr: "nasui", pt: "casado", es: "casado", en: "married", it: "sposato" },
+      { he: "גרוש", tr: "garush", pt: "divorciado", es: "divorciado", en: "divorced", it: "divorziato" },
+      { he: "אח תאום", tr: "ach te'om", pt: "irmão gêmeo", es: "hermano gemelo", en: "twin brother", it: "fratello gemello" },
+      { he: "אחות תאומה", tr: "achot te'oma", pt: "irmã gêmea", es: "hermana gemela", en: "twin sister", it: "sorella gemella" },
+    ],
+  },
+  {
+    id: "numeros",
+    name: "Números",
+    icon: "🔢",
+    nameLoc: { pt: "Números", en: "Numbers", es: "Números", it: "Numeri" },
+    glyph: "ע",
+    nameHe: "מספרים",
+    accent: "#3B4A6B",
+    words: [
+      { he: "אחת", tr: "achat", pt: "um", es: "uno", en: "one", it: "uno" },
+      { he: "שתיים", tr: "shtayim", pt: "dois", es: "dos", en: "two", it: "due" },
+      { he: "שלוש", tr: "shalosh", pt: "três", es: "tres", en: "three", it: "tre" },
+      { he: "ארבע", tr: "arba", pt: "quatro", es: "cuatro", en: "four", it: "quattro" },
+      { he: "חמש", tr: "chamesh", pt: "cinco", es: "cinco", en: "five", it: "cinque" },
+      { he: "שש", tr: "shesh", pt: "seis", es: "seis", en: "six", it: "sei" },
+      { he: "שבע", tr: "sheva", pt: "sete", es: "siete", en: "seven", it: "sette" },
+      { he: "שמונה", tr: "shmone", pt: "oito", es: "ocho", en: "eight", it: "otto" },
+      { he: "תשע", tr: "tesha", pt: "nove", es: "nueve", en: "nine", it: "nove" },
+      { he: "עשר", tr: "eser", pt: "dez", es: "diez", en: "ten", it: "dieci" },
+      { he: "אחת עשרה", tr: "achat esre", pt: "onze", es: "once", en: "eleven", it: "undici" },
+      { he: "שתים עשרה", tr: "shteim esre", pt: "doze", es: "doce", en: "twelve", it: "dodici" },
+      { he: "שלוש עשרה", tr: "shlosh esre", pt: "treze", es: "trece", en: "thirteen", it: "tredici" },
+      { he: "ארבע עשרה", tr: "arba esre", pt: "quatorze", es: "catorce", en: "fourteen", it: "quattordici" },
+      { he: "חמש עשרה", tr: "chamesh esre", pt: "quinze", es: "quince", en: "fifteen", it: "quindici" },
+      { he: "שש עשרה", tr: "shesh esre", pt: "dezesseis", es: "dieciséis", en: "sixteen", it: "sedici" },
+      { he: "שבע עשרה", tr: "shva esre", pt: "dezessete", es: "diecisiete", en: "seventeen", it: "diciassette" },
+      { he: "שמונה עשרה", tr: "shmone esre", pt: "dezoito", es: "dieciocho", en: "eighteen", it: "diciotto" },
+      { he: "תשע עשרה", tr: "tsha esre", pt: "dezenove", es: "diecinueve", en: "nineteen", it: "diciannove" },
+      { he: "עשרים", tr: "esrim", pt: "vinte", es: "veinte", en: "twenty", it: "venti" },
+      { he: "עשרים ואחת", tr: "esrim ve'achat", pt: "vinte e um", es: "veintiuno", en: "twenty-one", it: "ventuno" },
+      { he: "עשרים ושתיים", tr: "esrim u'shtayim", pt: "vinte e dois", es: "veintidós", en: "twenty-two", it: "ventidue" },
+      { he: "עשרים ושלוש", tr: "esrim ve'shalosh", pt: "vinte e três", es: "veintitrés", en: "twenty-three", it: "ventitré" },
+      { he: "עשרים וארבע", tr: "esrim ve'arba", pt: "vinte e quatro", es: "veinticuatro", en: "twenty-four", it: "ventiquattro" },
+      { he: "עשרים וחמש", tr: "esrim ve'chamesh", pt: "vinte e cinco", es: "veinticinco", en: "twenty-five", it: "venticinque" },
+      { he: "עשרים ושש", tr: "esrim ve'shesh", pt: "vinte e seis", es: "veintiséis", en: "twenty-six", it: "ventisei" },
+      { he: "עשרים ושבע", tr: "esrim ve'sheva", pt: "vinte e sete", es: "veintisiete", en: "twenty-seven", it: "ventisette" },
+      { he: "עשרים ושמונה", tr: "esrim u'shmone", pt: "vinte e oito", es: "veintiocho", en: "twenty-eight", it: "ventotto" },
+      { he: "עשרים ותשע", tr: "esrim ve'tesha", pt: "vinte e nove", es: "veintinueve", en: "twenty-nine", it: "ventinove" },
+      { he: "שלושים", tr: "shloshim", pt: "trinta", es: "treinta", en: "thirty", it: "trenta" },
+      { he: "שלושים ואחת", tr: "shloshim ve'achat", pt: "trinta e um", es: "treinta y uno", en: "thirty-one", it: "trentuno" },
+      { he: "שלושים ושתיים", tr: "shloshim u'shtayim", pt: "trinta e dois", es: "treinta y dos", en: "thirty-two", it: "trentadue" },
+      { he: "שלושים ושלוש", tr: "shloshim ve'shalosh", pt: "trinta e três", es: "treinta y tres", en: "thirty-three", it: "trentatré" },
+      { he: "שלושים וארבע", tr: "shloshim ve'arba", pt: "trinta e quatro", es: "treinta y cuatro", en: "thirty-four", it: "trentaquattro" },
+      { he: "שלושים וחמש", tr: "shloshim ve'chamesh", pt: "trinta e cinco", es: "treinta y cinco", en: "thirty-five", it: "trentacinque" },
+      { he: "שלושים ושש", tr: "shloshim ve'shesh", pt: "trinta e seis", es: "treinta y seis", en: "thirty-six", it: "trentasei" },
+      { he: "שלושים ושבע", tr: "shloshim ve'sheva", pt: "trinta e sete", es: "treinta y siete", en: "thirty-seven", it: "trentasette" },
+      { he: "שלושים ושמונה", tr: "shloshim u'shmone", pt: "trinta e oito", es: "treinta y ocho", en: "thirty-eight", it: "trentotto" },
+      { he: "שלושים ותשע", tr: "shloshim ve'tesha", pt: "trinta e nove", es: "treinta y nueve", en: "thirty-nine", it: "trentanove" },
+      { he: "ארבעים", tr: "arba'im", pt: "quarenta", es: "cuarenta", en: "forty", it: "quaranta" },
+      { he: "ארבעים ואחת", tr: "arba'im ve'achat", pt: "quarenta e um", es: "cuarenta y uno", en: "forty-one", it: "quarantuno" },
+      { he: "ארבעים ושתיים", tr: "arba'im u'shtayim", pt: "quarenta e dois", es: "cuarenta y dos", en: "forty-two", it: "quarantadue" },
+      { he: "ארבעים ושלוש", tr: "arba'im ve'shalosh", pt: "quarenta e três", es: "cuarenta y tres", en: "forty-three", it: "quarantatré" },
+      { he: "ארבעים וארבע", tr: "arba'im ve'arba", pt: "quarenta e quatro", es: "cuarenta y cuatro", en: "forty-four", it: "quarantaquattro" },
+      { he: "ארבעים וחמש", tr: "arba'im ve'chamesh", pt: "quarenta e cinco", es: "cuarenta y cinco", en: "forty-five", it: "quarantacinque" },
+      { he: "ארבעים ושש", tr: "arba'im ve'shesh", pt: "quarenta e seis", es: "cuarenta y seis", en: "forty-six", it: "quarantasei" },
+      { he: "ארבעים ושבע", tr: "arba'im ve'sheva", pt: "quarenta e sete", es: "cuarenta y siete", en: "forty-seven", it: "quarantasette" },
+      { he: "ארבעים ושמונה", tr: "arba'im u'shmone", pt: "quarenta e oito", es: "cuarenta y ocho", en: "forty-eight", it: "quarantotto" },
+      { he: "ארבעים ותשע", tr: "arba'im ve'tesha", pt: "quarenta e nove", es: "cuarenta y nueve", en: "forty-nine", it: "quarantanove" },
+      { he: "חמישים", tr: "chamishim", pt: "cinquenta", es: "cincuenta", en: "fifty", it: "cinquanta" },
+    ],
+  },
+  {
+    id: "comida",
+    name: "Comida",
+    icon: "🍽️",
+    nameLoc: { pt: "Comida", en: "Food", es: "Comida", it: "Cibo" },
+    glyph: "ל",
+    nameHe: "אוכל",
+    accent: "#A6541D",
+    words: [
+      { he: "לחם", tr: "lechem", pt: "pão", es: "pan", en: "bread", it: "pane" },
+      { he: "אורז", tr: "orez", pt: "arroz", es: "arroz", en: "rice", it: "riso" },
+      { he: "מרק", tr: "marak", pt: "sopa", es: "sopa", en: "soup", it: "zuppa" },
+      { he: "גבינה", tr: "gvina", pt: "queijo", es: "queso", en: "cheese", it: "formaggio" },
+      { he: "ביצה", tr: "beytsa", pt: "ovo", es: "huevo", en: "egg", it: "uovo" },
+      { he: "חלב", tr: "chalav", pt: "leite", es: "leche", en: "milk", it: "latte" },
+      { he: "מים", tr: "mayim", pt: "água", es: "agua", en: "water", it: "acqua" },
+      { he: "בשר", tr: "basar", pt: "carne", es: "carne", en: "meat", it: "carne" },
+      { he: "סלט", tr: "salat", pt: "salada", es: "ensalada", en: "salad", it: "insalata" },
+      { he: "גלידה", tr: "glida", pt: "sorvete", es: "helado", en: "ice cream", it: "gelato" },
+      { he: "שוקולד", tr: "shokolad", pt: "chocolate", es: "chocolate", en: "chocolate", it: "cioccolato" },
+      { he: "קפה", tr: "kafe", pt: "café", es: "café", en: "coffee", it: "caffè" },
+      { he: "תה", tr: "te", pt: "chá", es: "té", en: "tea", it: "tè" },
+      { he: "סוכר", tr: "sukar", pt: "açúcar", es: "azúcar", en: "sugar", it: "zucchero" },
+      { he: "מלח", tr: "melach", pt: "sal", es: "sal", en: "salt", it: "sale" },
+      { he: "עוגה", tr: "uga", pt: "bolo", es: "pastel", en: "cake", it: "torta" },
+      { he: "עוגייה", tr: "ugiya", pt: "biscoito", es: "galleta", en: "cookie", it: "biscotto" },
+      { he: "פסטה", tr: "pasta", pt: "massa", es: "pasta", en: "pasta", it: "pasta" },
+      { he: "פיצה", tr: "pitza", pt: "pizza", es: "pizza", en: "pizza", it: "pizza" },
+      { he: "המבורגר", tr: "hamburger", pt: "hambúrguer", es: "hamburguesa", en: "hamburger", it: "hamburger" },
+      { he: "נקניקייה", tr: "nakniykiya", pt: "salsicha", es: "salchicha", en: "sausage", it: "salsiccia" },
+      { he: "עוף", tr: "of", pt: "frango", es: "pollo", en: "chicken", it: "pollo" },
+      { he: "טונה", tr: "tuna", pt: "atum", es: "atún", en: "tuna", it: "tonno" },
+      { he: "שמן זית", tr: "shemen zayit", pt: "azeite de oliva", es: "aceite de oliva", en: "olive oil", it: "olio d'oliva" },
+      { he: "חומץ", tr: "chometz", pt: "vinagre", es: "vinagre", en: "vinegar", it: "aceto" },
+      { he: "פלפל שחור", tr: "pilpel shachor", pt: "pimenta-do-reino", es: "pimienta negra", en: "black pepper", it: "pepe nero" },
+      { he: "בצל", tr: "batsal", pt: "cebola", es: "cebolla", en: "onion", it: "cipolla" },
+      { he: "שום", tr: "shum", pt: "alho", es: "ajo", en: "garlic", it: "aglio" },
+      { he: "עגבנייה", tr: "agvaniya", pt: "tomate", es: "tomate", en: "tomato", it: "pomodoro" },
+      { he: "מלפפון", tr: "melafefon", pt: "pepino", es: "pepino", en: "cucumber", it: "cetriolo" },
+      { he: "גזר", tr: "gezer", pt: "cenoura", es: "zanahoria", en: "carrot", it: "carota" },
+      { he: "תפוח אדמה", tr: "tapuach adama", pt: "batata", es: "papa", en: "potato", it: "patata" },
+      { he: "חסה", tr: "chasa", pt: "alface", es: "lechuga", en: "lettuce", it: "lattuga" },
+      { he: "כרוב", tr: "kruv", pt: "repolho", es: "col", en: "cabbage", it: "cavolo" },
+      { he: "פלפל ירוק", tr: "pilpel yarok", pt: "pimentão verde", es: "pimiento verde", en: "green pepper", it: "peperone verde" },
+      { he: "תירס", tr: "tiras", pt: "milho", es: "maíz", en: "corn", it: "mais" },
+      { he: "שעועית", tr: "she'u'it", pt: "feijão", es: "frijol", en: "beans", it: "fagioli" },
+      { he: "עדשים", tr: "adashim", pt: "lentilhas", es: "lentejas", en: "lentils", it: "lenticchie" },
+      { he: "חומוס", tr: "chumus", pt: "grão-de-bico", es: "garbanzos", en: "chickpeas", it: "ceci" },
+      { he: "טחינה", tr: "techina", pt: "tahine", es: "tahini", en: "tahini", it: "tahin" },
+      { he: "זיתים", tr: "zeytim", pt: "azeitonas", es: "aceitunas", en: "olives", it: "olive" },
+      { he: "יין", tr: "yayin", pt: "vinho", es: "vino", en: "wine", it: "vino" },
+      { he: "בירה", tr: "bira", pt: "cerveja", es: "cerveza", en: "beer", it: "birra" },
+      { he: "מיץ", tr: "mitz", pt: "suco", es: "jugo", en: "juice", it: "succo" },
+      { he: "דבש", tr: "dvash", pt: "mel", es: "miel", en: "honey", it: "miele" },
+      { he: "חמאה", tr: "chem'a", pt: "manteiga", es: "mantequilla", en: "butter", it: "burro" },
+      { he: "יוגורט", tr: "yogurt", pt: "iogurte", es: "yogur", en: "yogurt", it: "yogurt" },
+      { he: "קמח", tr: "kemach", pt: "farinha", es: "harina", en: "flour", it: "farina" },
+      { he: "מיונז", tr: "mayonez", pt: "maionese", es: "mayonesa", en: "mayonnaise", it: "maionese" },
+      { he: "קטשופ", tr: "ketshup", pt: "ketchup", es: "kétchup", en: "ketchup", it: "ketchup" },
+    ],
+  },
+  {
+    id: "corpo",
+    name: "Corpo",
+    icon: "🧍",
+    nameLoc: { pt: "Corpo", en: "Body", es: "Cuerpo", it: "Corpo" },
+    glyph: "ר",
+    nameHe: "גוף",
+    accent: "#9C3D54",
+    words: [
+      { he: "ראש", tr: "rosh", pt: "cabeça", es: "cabeza", en: "head", it: "testa" },
+      { he: "עין", tr: "ayin", pt: "olho", es: "ojo", en: "eye", it: "occhio" },
+      { he: "אף", tr: "af", pt: "nariz", es: "nariz", en: "nose", it: "naso" },
+      { he: "פה", tr: "pe", pt: "boca", es: "boca", en: "mouth", it: "bocca" },
+      { he: "אוזן", tr: "ozen", pt: "orelha", es: "oreja", en: "ear", it: "orecchio" },
+      { he: "יד", tr: "yad", pt: "mão", es: "mano", en: "hand", it: "mano" },
+      { he: "רגל", tr: "regel", pt: "pé", es: "pie", en: "foot", it: "piede" },
+      { he: "זרוע", tr: "zroa", pt: "braço", es: "brazo", en: "arm", it: "braccio" },
+      { he: "לב", tr: "lev", pt: "coração", es: "corazón", en: "heart", it: "cuore" },
+      { he: "שיער", tr: "se'ar", pt: "cabelo", es: "cabello", en: "hair", it: "capelli" },
+      { he: "אצבע", tr: "etsba", pt: "dedo", es: "dedo", en: "finger", it: "dito" },
+      { he: "גב", tr: "gav", pt: "costas", es: "espalda", en: "back", it: "schiena" },
+      { he: "בטן", tr: "beten", pt: "barriga", es: "panza", en: "belly", it: "pancia" },
+      { he: "שן", tr: "shen", pt: "dente", es: "diente", en: "tooth", it: "dente" },
+      { he: "כתף", tr: "katef", pt: "ombro", es: "hombro", en: "shoulder", it: "spalla" },
+      { he: "ברך", tr: "berech", pt: "joelho", es: "rodilla", en: "knee", it: "ginocchio" },
+      { he: "קרסול", tr: "karsol", pt: "tornozelo", es: "tobillo", en: "ankle", it: "caviglia" },
+      { he: "מרפק", tr: "marpek", pt: "cotovelo", es: "codo", en: "elbow", it: "gomito" },
+      { he: "צוואר", tr: "tsavar", pt: "pescoço", es: "cuello", en: "neck", it: "collo" },
+      { he: "לחי", tr: "lechi", pt: "bochecha", es: "mejilla", en: "cheek", it: "guancia" },
+      { he: "מצח", tr: "metzach", pt: "testa", es: "frente", en: "forehead", it: "fronte" },
+      { he: "סנטר", tr: "santer", pt: "queixo", es: "barbilla", en: "chin", it: "mento" },
+      { he: "גבה", tr: "gaba", pt: "sobrancelha", es: "ceja", en: "eyebrow", it: "sopracciglio" },
+      { he: "ריס", tr: "ris", pt: "cílio", es: "pestaña", en: "eyelash", it: "ciglio" },
+      { he: "שפה", tr: "safa", pt: "lábio", es: "labio", en: "lip", it: "labbro" },
+      { he: "לשון", tr: "lashon", pt: "língua", es: "lengua", en: "tongue", it: "lingua" },
+      { he: "עצם", tr: "etsem", pt: "osso", es: "hueso", en: "bone", it: "osso" },
+      { he: "שריר", tr: "shrir", pt: "músculo", es: "músculo", en: "muscle", it: "muscolo" },
+      { he: "עור", tr: "or", pt: "pele", es: "piel", en: "skin", it: "pelle" },
+      { he: "ריאה", tr: "re'a", pt: "pulmão", es: "pulmón", en: "lung", it: "polmone" },
+      { he: "כבד", tr: "kaved", pt: "fígado", es: "hígado", en: "liver", it: "fegato" },
+      { he: "כליה", tr: "klaya", pt: "rim", es: "riñón", en: "kidney", it: "rene" },
+      { he: "קיבה", tr: "keiva", pt: "estômago", es: "estómago", en: "stomach", it: "stomaco" },
+      { he: "מוח", tr: "moach", pt: "cérebro", es: "cerebro", en: "brain", it: "cervello" },
+      { he: "עמוד שדרה", tr: "amud shidra", pt: "coluna vertebral", es: "columna vertebral", en: "spine", it: "colonna vertebrale" },
+      { he: "ירך", tr: "yarech", pt: "coxa", es: "muslo", en: "thigh", it: "coscia" },
+      { he: "שוק", tr: "shok", pt: "canela", es: "pantorrilla", en: "shin", it: "stinco" },
+      { he: "עקב", tr: "akev", pt: "calcanhar", es: "talón", en: "heel", it: "tallone" },
+      { he: "כף יד", tr: "kaf yad", pt: "palma da mão", es: "palma de la mano", en: "palm", it: "palmo della mano" },
+      { he: "כף רגל", tr: "kaf regel", pt: "planta do pé", es: "planta del pie", en: "sole", it: "pianta del piede" },
+      { he: "ציפורן", tr: "tsiporen", pt: "unha", es: "uña", en: "nail", it: "unghia" },
+      { he: "פרק כף היד", tr: "perek kaf hayad", pt: "pulso", es: "muñeca", en: "wrist", it: "polso" },
+      { he: "אגן", tr: "agan", pt: "quadril", es: "cadera", en: "hip", it: "anca" },
+      { he: "טבור", tr: "tabur", pt: "umbigo", es: "ombligo", en: "navel", it: "ombelico" },
+      { he: "גרון", tr: "garon", pt: "garganta", es: "garganta", en: "throat", it: "gola" },
+      { he: "לסת", tr: "leset", pt: "mandíbula", es: "mandíbula", en: "jaw", it: "mascella" },
+      { he: "דם", tr: "dam", pt: "sangue", es: "sangre", en: "blood", it: "sangue" },
+      { he: "עורק", tr: "orek", pt: "artéria", es: "arteria", en: "artery", it: "arteria" },
+      { he: "וריד", tr: "varid", pt: "veia", es: "vena", en: "vein", it: "vena" },
+      { he: "זקן", tr: "zakan", pt: "barba", es: "barba", en: "beard", it: "barba" },
+    ],
+  },
+  {
+    id: "casa",
+    name: "Casa",
+    icon: "🏠",
+    nameLoc: { pt: "Casa", en: "House", es: "Casa", it: "Casa" },
+    glyph: "ב",
+    nameHe: "בית",
+    accent: "#2E5C6E",
+    words: [
+      { he: "בית", tr: "bayit", pt: "casa", es: "casa", en: "house", it: "casa" },
+      { he: "חדר", tr: "cheder", pt: "quarto", es: "habitación", en: "room", it: "stanza" },
+      { he: "מטבח", tr: "mitbach", pt: "cozinha", es: "cocina", en: "kitchen", it: "cucina" },
+      { he: "שירותים", tr: "sherutim", pt: "banheiro", es: "baño", en: "bathroom", it: "bagno" },
+      { he: "סלון", tr: "salon", pt: "sala", es: "salón", en: "living room", it: "soggiorno" },
+      { he: "דלת", tr: "delet", pt: "porta", es: "puerta", en: "door", it: "porta" },
+      { he: "חלון", tr: "chalon", pt: "janela", es: "ventana", en: "window", it: "finestra" },
+      { he: "מפתח", tr: "maftea'ch", pt: "chave", es: "llave", en: "key", it: "chiave" },
+      { he: "גינה", tr: "gina", pt: "jardim", es: "jardín", en: "garden", it: "giardino" },
+      { he: "תקרה", tr: "tikra", pt: "teto", es: "techo", en: "ceiling", it: "soffitto" },
+      { he: "קיר", tr: "kir", pt: "parede", es: "pared", en: "wall", it: "parete" },
+      { he: "מדרגות", tr: "madregot", pt: "escada", es: "escalera", en: "stairs", it: "scale" },
+      { he: "חדר שינה", tr: "cheder shena", pt: "quarto de dormir", es: "dormitorio", en: "bedroom", it: "camera da letto" },
+      { he: "מרפסת", tr: "mirpeset", pt: "varanda", es: "balcón", en: "balcony", it: "balcone" },
+      { he: "חצר", tr: "chatzer", pt: "quintal", es: "patio", en: "backyard", it: "cortile" },
+      { he: "גג", tr: "gag", pt: "telhado", es: "tejado", en: "roof", it: "tetto" },
+      { he: "רצפה", tr: "ritspa", pt: "piso", es: "suelo", en: "floor", it: "pavimento" },
+      { he: "מסדרון", tr: "misdaron", pt: "corredor", es: "pasillo", en: "hallway", it: "corridoio" },
+      { he: "מוסך", tr: "musach", pt: "garagem", es: "garaje", en: "garage", it: "garage" },
+      { he: "מרתף", tr: "martef", pt: "porão", es: "sótano", en: "basement", it: "seminterrato" },
+      { he: "עליית גג", tr: "aliyat gag", pt: "sótão", es: "desván", en: "attic", it: "soffitta" },
+      { he: "חדר עבודה", tr: "cheder avoda", pt: "escritório", es: "oficina en casa", en: "home office", it: "ufficio in casa" },
+      { he: "שקע", tr: "sheka", pt: "tomada", es: "enchufe", en: "electric socket", it: "presa elettrica" },
+      { he: "מתג", tr: "meteg", pt: "interruptor", es: "interruptor", en: "switch", it: "interruttore" },
+      { he: "מנורת תקרה", tr: "menorat tikra", pt: "lustre", es: "lámpara de techo", en: "ceiling light", it: "lampadario" },
+      { he: "דלת כניסה", tr: "delet knisa", pt: "porta de entrada", es: "puerta de entrada", en: "front door", it: "porta d'ingresso" },
+      { he: "דלת אחורית", tr: "delet achorit", pt: "porta dos fundos", es: "puerta trasera", en: "back door", it: "porta sul retro" },
+      { he: "גדר", tr: "gader", pt: "cerca", es: "valla", en: "fence", it: "recinto" },
+      { he: "שער", tr: "sha'ar", pt: "portão", es: "portón", en: "gate", it: "cancello" },
+      { he: "כניסה", tr: "knisa", pt: "entrada", es: "entrada", en: "entrance", it: "ingresso" },
+      { he: "מזוזה", tr: "mezuza", pt: "mezuzá", es: "mezuzá", en: "mezuzah", it: "mezuzah" },
+      { he: "מעלית", tr: "ma'alit", pt: "elevador", es: "ascensor", en: "elevator", it: "ascensore" },
+      { he: "קומה", tr: "koma", pt: "andar", es: "piso", en: "floor (storey)", it: "piano" },
+      { he: "בניין", tr: "binyan", pt: "prédio", es: "edificio", en: "building", it: "edificio" },
+      { he: "שכונה", tr: "shchuna", pt: "bairro", es: "barrio", en: "neighborhood", it: "quartiere" },
+      { he: "כתובת", tr: "ktovet", pt: "endereço", es: "dirección", en: "address", it: "indirizzo" },
+      { he: "דואר", tr: "do'ar", pt: "correio", es: "correo", en: "mail", it: "posta" },
+      { he: "תיבת דואר", tr: "teivat do'ar", pt: "caixa de correio", es: "buzón", en: "mailbox", it: "cassetta della posta" },
+      { he: "פעמון", tr: "pa'amon", pt: "campainha", es: "timbre", en: "doorbell", it: "campanello" },
+      { he: "אח", tr: "ach", pt: "lareira", es: "chimenea", en: "fireplace", it: "camino" },
+      { he: "ארובה", tr: "aruba", pt: "chaminé", es: "chimenea", en: "chimney", it: "canna fumaria" },
+      { he: "חדר כביסה", tr: "cheder kvisa", pt: "lavanderia", es: "lavandería", en: "laundry room", it: "lavanderia" },
+      { he: "מזווה", tr: "mizva", pt: "despensa", es: "despensa", en: "pantry", it: "dispensa" },
+      { he: "דלת הזזה", tr: "delet hazaza", pt: "porta de correr", es: "puerta corrediza", en: "sliding door", it: "porta scorrevole" },
+      { he: "תריס", tr: "trisim", pt: "persiana", es: "persiana", en: "shutter", it: "persiana" },
+      { he: "חדר אורחים", tr: "cheder orchim", pt: "sala de visitas", es: "sala de visitas", en: "guest room", it: "stanza degli ospiti" },
+      { he: "חדר ילדים", tr: "cheder yeladim", pt: "quarto infantil", es: "cuarto infantil", en: "children's room", it: "cameretta dei bambini" },
+      { he: "בריכת שחייה", tr: "breichat schiya", pt: "piscina", es: "piscina", en: "swimming pool", it: "piscina" },
+      { he: "שביל", tr: "shvil", pt: "caminho", es: "camino", en: "path", it: "sentiero" },
+      { he: "אדן חלון", tr: "eden chalon", pt: "parapeito da janela", es: "alféizar", en: "windowsill", it: "davanzale" },
+    ],
+  },
+  {
+    id: "profissoes",
+    name: "Profissões",
+    icon: "💼",
+    nameLoc: { pt: "Profissões", en: "Professions", es: "Profesiones", it: "Professioni" },
+    glyph: "מ",
+    nameHe: "מקצועות",
+    accent: "#4B3F72",
+    words: [
+      { he: "רופא", tr: "rofe", pt: "médico", es: "médico", en: "doctor", it: "medico" },
+      { he: "מורה", tr: "more", pt: "professor", es: "profesor", en: "teacher", it: "insegnante" },
+      { he: "מהנדס", tr: "mehandes", pt: "engenheiro", es: "ingeniero", en: "engineer", it: "ingegnere" },
+      { he: "עורך דין", tr: "orech din", pt: "advogado", es: "abogado", en: "lawyer", it: "avvocato" },
+      { he: "טבח", tr: "tabach", pt: "cozinheiro", es: "cocinero", en: "cook", it: "cuoco" },
+      { he: "שוטר", tr: "shoter", pt: "policial", es: "policía", en: "police officer", it: "poliziotto" },
+      { he: "נהג", tr: "nahag", pt: "motorista", es: "conductor", en: "driver", it: "autista" },
+      { he: "אמן", tr: "oman", pt: "artista", es: "artista", en: "artist", it: "artista" },
+      { he: "חקלאי", tr: "chaklai", pt: "agricultor", es: "agricultor", en: "farmer", it: "agricoltore" },
+      { he: "מדען", tr: "mada'an", pt: "cientista", es: "científico", en: "scientist", it: "scienziato" },
+      { he: "סופר", tr: "sofer", pt: "escritor", es: "escritor", en: "writer", it: "scrittore" },
+      { he: "זמר", tr: "zamar", pt: "cantor", es: "cantante", en: "singer", it: "cantante" },
+      { he: "אחות", tr: "achot", pt: "enfermeira", es: "enfermera", en: "nurse", it: "infermiera" },
+      { he: "טייס", tr: "tayas", pt: "piloto", es: "piloto", en: "pilot", it: "pilota" },
+      { he: "דיילת", tr: "dayelet", pt: "aeromoça", es: "azafata", en: "flight attendant", it: "assistente di volo" },
+      { he: "כבאי", tr: "kabai", pt: "bombeiro", es: "bombero", en: "firefighter", it: "pompiere" },
+      { he: "חייל", tr: "chayal", pt: "soldado", es: "soldado", en: "soldier", it: "soldato" },
+      { he: "פסיכולוג", tr: "psicholog", pt: "psicólogo", es: "psicólogo", en: "psychologist", it: "psicologo" },
+      { he: "רואה חשבון", tr: "ro'e cheshbon", pt: "contador", es: "contador", en: "accountant", it: "contabile" },
+      { he: "אדריכל", tr: "adrichal", pt: "arquiteto", es: "arquitecto", en: "architect", it: "architetto" },
+      { he: "צלם", tr: "tsalam", pt: "fotógrafo", es: "fotógrafo", en: "photographer", it: "fotografo" },
+      { he: "שחקן", tr: "sachkan", pt: "ator", es: "actor", en: "actor", it: "attore" },
+      { he: "שחקנית", tr: "sachkanit", pt: "atriz", es: "actriz", en: "actress", it: "attrice" },
+      { he: "במאי", tr: "bamai", pt: "diretor de cinema", es: "director de cine", en: "film director", it: "regista" },
+      { he: "מוזיקאי", tr: "muzikai", pt: "músico", es: "músico", en: "musician", it: "musicista" },
+      { he: "רקדן", tr: "rakdan", pt: "dançarino", es: "bailarín", en: "dancer", it: "ballerino" },
+      { he: "ספר", tr: "sapar", pt: "cabeleireiro", es: "peluquero", en: "hairdresser", it: "parrucchiere" },
+      { he: "מוכר", tr: "mocher", pt: "vendedor", es: "vendedor", en: "salesperson", it: "venditore" },
+      { he: "קופאי", tr: "kupai", pt: "caixa", es: "cajero", en: "cashier", it: "cassiere" },
+      { he: "מלצר", tr: "meltzar", pt: "garçom", es: "mesero", en: "waiter", it: "cameriere" },
+      { he: "מלצרית", tr: "meltzarit", pt: "garçonete", es: "mesera", en: "waitress", it: "cameriera" },
+      { he: "דוור", tr: "davar", pt: "carteiro", es: "cartero", en: "mail carrier", it: "postino" },
+      { he: "גנן", tr: "ganan", pt: "jardineiro", es: "jardinero", en: "gardener", it: "giardiniere" },
+      { he: "נגר", tr: "nagar", pt: "marceneiro", es: "carpintero", en: "carpenter", it: "falegname" },
+      { he: "חשמלאי", tr: "chashmalai", pt: "eletricista", es: "electricista", en: "electrician", it: "elettricista" },
+      { he: "שרברב", tr: "sharvrav", pt: "encanador", es: "plomero", en: "plumber", it: "idraulico" },
+      { he: "צבע", tr: "tsabá", pt: "pintor", es: "pintor", en: "painter", it: "pittore" },
+      { he: "פקיד", tr: "pakid", pt: "funcionário", es: "oficinista", en: "clerk", it: "impiegato" },
+      { he: "מנהל", tr: "menahel", pt: "gerente", es: "gerente", en: "manager", it: "manager" },
+      { he: "עובד סוציאלי", tr: "oved sotsiali", pt: "assistente social", es: "trabajador social", en: "social worker", it: "assistente sociale" },
+      { he: "וטרינר", tr: "veterinar", pt: "veterinário", es: "veterinario", en: "veterinarian", it: "veterinario" },
+      { he: "רוקח", tr: "rokeach", pt: "farmacêutico", es: "farmacéutico", en: "pharmacist", it: "farmacista" },
+      { he: "כלכלן", tr: "kalkelan", pt: "economista", es: "economista", en: "economist", it: "economista" },
+      { he: "עיתונאי", tr: "itonai", pt: "jornalista", es: "periodista", en: "journalist", it: "giornalista" },
+      { he: "מתכנת", tr: "metachnet", pt: "programador", es: "programador", en: "programmer", it: "programmatore" },
+      { he: "טכנאי", tr: "technai", pt: "técnico", es: "técnico", en: "technician", it: "tecnico" },
+      { he: "בלש", tr: "balash", pt: "detetive", es: "detective", en: "detective", it: "detective" },
+      { he: "שוער", tr: "sho'er", pt: "porteiro", es: "portero", en: "doorman", it: "portiere" },
+      { he: "אופה", tr: "ofe", pt: "padeiro", es: "panadero", en: "baker", it: "fornaio" },
+      { he: "קצין", tr: "katsin", pt: "oficial", es: "oficial", en: "officer", it: "ufficiale" },
+    ],
+  },
+];
+
+const CATEGORY_MAP = Object.fromEntries(CATEGORIES.map((c) => [c.id, c]));
+
+/* ---------------------------------------------------------
+   Idiomas e textos da interface
+--------------------------------------------------------- */
+const LANGUAGES = [
+  { code: "pt", label: "Português", flag: "🇧🇷" },
+  { code: "en", label: "English", flag: "🇺🇸" },
+  { code: "es", label: "Español", flag: "🇪🇸" },
+  { code: "it", label: "Italiano", flag: "🇮🇹" },
+];
+
+const STRINGS = {
+  pt: {
+    appSubtitle: "Aprender hebraico · cartas por assunto",
+    chooseLanguageTitle: "Escolha o idioma",
+    chooseLanguageSubtitle: "Em que idioma você quer estudar?",
+    changeLanguage: "idioma",
+    studied: "estudadas",
+    cardOf: "carta {n} de {total}",
+    tapToFlip: "toque para virar · deslize para trocar",
+    startQuiz: "Iniciar quiz",
+    backToFolders: "pastas",
+    quizQuestionOf: "pergunta {n} de {total}",
+    points: "pontos",
+    whatIsMeaning: "Qual é o significado?",
+    resultTitle: "Resultado do quiz",
+    bestResult: "melhor resultado",
+    redoQuiz: "Refazer quiz",
+    backToCards: "voltar às cartas",
+    exitQuiz: "sair do quiz",
+    nextQuestion: "Próxima pergunta →",
+    seeResult: "Ver resultado",
+    combinedQuizBtn: "Quiz combinado",
+    combinedQuizTitle: "Quiz combinado",
+    combinedQuizSubtitle: "Selecione as pastas que quer treinar juntas (máx. 25 palavras por quiz)",
+    selectAll: "selecionar todas",
+    clearAll: "limpar seleção",
+    startCombinedQuiz: "Iniciar quiz combinado",
+    selectAtLeastOne: "Selecione ao menos uma pasta",
+    wordsAvailable: "palavras",
+    combinedQuizHeader: "Quiz combinado",
+    backToHome: "início",
+  },
+  en: {
+    appSubtitle: "Learn Hebrew · flashcards by topic",
+    chooseLanguageTitle: "Choose your language",
+    chooseLanguageSubtitle: "Which language do you want to study in?",
+    changeLanguage: "language",
+    studied: "studied",
+    cardOf: "card {n} of {total}",
+    tapToFlip: "tap to flip · swipe to change",
+    startQuiz: "Start quiz",
+    backToFolders: "folders",
+    quizQuestionOf: "question {n} of {total}",
+    points: "points",
+    whatIsMeaning: "What's the meaning?",
+    resultTitle: "Quiz result",
+    bestResult: "best result",
+    redoQuiz: "Retake quiz",
+    backToCards: "back to cards",
+    exitQuiz: "exit quiz",
+    nextQuestion: "Next question →",
+    seeResult: "See result",
+    combinedQuizBtn: "Combined quiz",
+    combinedQuizTitle: "Combined quiz",
+    combinedQuizSubtitle: "Select the folders to train together (max 25 words per quiz)",
+    selectAll: "select all",
+    clearAll: "clear selection",
+    startCombinedQuiz: "Start combined quiz",
+    selectAtLeastOne: "Select at least one folder",
+    wordsAvailable: "words",
+    combinedQuizHeader: "Combined quiz",
+    backToHome: "home",
+  },
+  es: {
+    appSubtitle: "Aprender hebreo · tarjetas por tema",
+    chooseLanguageTitle: "Elige el idioma",
+    chooseLanguageSubtitle: "¿En qué idioma quieres estudiar?",
+    changeLanguage: "idioma",
+    studied: "estudiadas",
+    cardOf: "tarjeta {n} de {total}",
+    tapToFlip: "toca para voltear · desliza para cambiar",
+    startQuiz: "Iniciar quiz",
+    backToFolders: "carpetas",
+    quizQuestionOf: "pregunta {n} de {total}",
+    points: "puntos",
+    whatIsMeaning: "¿Cuál es el significado?",
+    resultTitle: "Resultado del quiz",
+    bestResult: "mejor resultado",
+    redoQuiz: "Repetir quiz",
+    backToCards: "volver a las tarjetas",
+    exitQuiz: "salir del quiz",
+    nextQuestion: "Siguiente pregunta →",
+    seeResult: "Ver resultado",
+    combinedQuizBtn: "Quiz combinado",
+    combinedQuizTitle: "Quiz combinado",
+    combinedQuizSubtitle: "Selecciona las carpetas para entrenar juntas (máx. 25 palabras por quiz)",
+    selectAll: "seleccionar todas",
+    clearAll: "limpiar selección",
+    startCombinedQuiz: "Iniciar quiz combinado",
+    selectAtLeastOne: "Selecciona al menos una carpeta",
+    wordsAvailable: "palabras",
+    combinedQuizHeader: "Quiz combinado",
+    backToHome: "inicio",
+  },
+  it: {
+    appSubtitle: "Imparare l'ebraico · carte per argomento",
+    chooseLanguageTitle: "Scegli la lingua",
+    chooseLanguageSubtitle: "In quale lingua vuoi studiare?",
+    changeLanguage: "lingua",
+    studied: "studiate",
+    cardOf: "carta {n} di {total}",
+    tapToFlip: "tocca per girare · scorri per cambiare",
+    startQuiz: "Inizia quiz",
+    backToFolders: "cartelle",
+    quizQuestionOf: "domanda {n} di {total}",
+    points: "punti",
+    whatIsMeaning: "Qual è il significato?",
+    resultTitle: "Risultato del quiz",
+    bestResult: "miglior risultato",
+    redoQuiz: "Rifai il quiz",
+    backToCards: "torna alle carte",
+    exitQuiz: "esci dal quiz",
+    nextQuestion: "Prossima domanda →",
+    seeResult: "Vedi risultato",
+    combinedQuizBtn: "Quiz combinato",
+    combinedQuizTitle: "Quiz combinato",
+    combinedQuizSubtitle: "Seleziona le cartelle da allenare insieme (max 25 parole per quiz)",
+    selectAll: "seleziona tutte",
+    clearAll: "cancella selezione",
+    startCombinedQuiz: "Inizia quiz combinato",
+    selectAtLeastOne: "Seleziona almeno una cartella",
+    wordsAvailable: "parole",
+    combinedQuizHeader: "Quiz combinato",
+    backToHome: "home",
+  },
+};
+
+function t(lang, key, vars) {
+  let str = (STRINGS[lang] && STRINGS[lang][key]) || STRINGS.pt[key] || key;
+  if (vars) {
+    Object.keys(vars).forEach((k) => {
+      str = str.replace(`{${k}}`, vars[k]);
+    });
+  }
+  return str;
+}
+
+const MAX_QUIZ_WORDS = 25;
+
+/* ---------------------------------------------------------
+   Utilidades
+--------------------------------------------------------- */
+function shuffle(arr) {
+  const a = [...arr];
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [a[i], a[j]] = [a[j], a[i]];
+  }
+  return a;
+}
+
+function buildQuiz(category, lang) {
+  const pool = shuffle(category.words).slice(0, MAX_QUIZ_WORDS);
+  const items = pool.map((w) => {
+    const distractors = shuffle(
+      category.words.filter((o) => o[lang] !== w[lang])
+    ).slice(0, 3);
+    const options = shuffle([w[lang], ...distractors.map((d) => d[lang])]);
+    return { word: w, options, correct: w[lang], categoryId: category.id };
+  });
+  return items;
+}
+
+// Monta um quiz combinando várias pastas, alternando entre elas (round-robin),
+// limitado a MAX_QUIZ_WORDS perguntas no total.
+function buildCombinedQuiz(categoryIds, lang) {
+  const cats = categoryIds.map((id) => CATEGORY_MAP[id]).filter(Boolean);
+  const pools = cats.map((c) => ({
+    catId: c.id,
+    accent: c.accent,
+    words: shuffle(c.words),
+  }));
+  const result = [];
+  let round = 0;
+  while (result.length < MAX_QUIZ_WORDS) {
+    let addedAny = false;
+    for (const pool of pools) {
+      if (result.length >= MAX_QUIZ_WORDS) break;
+      const w = pool.words[round];
+      if (!w) continue;
+      addedAny = true;
+      const cat = CATEGORY_MAP[pool.catId];
+      const distractors = shuffle(
+        cat.words.filter((o) => o[lang] !== w[lang])
+      ).slice(0, 3);
+      const options = shuffle([w[lang], ...distractors.map((d) => d[lang])]);
+      result.push({ word: w, options, correct: w[lang], categoryId: pool.catId, accent: cat.accent });
+    }
+    round += 1;
+    if (!addedAny) break;
+  }
+  return result;
+}
+
+/* ---------------------------------------------------------
+   Persistência (window.storage)
+--------------------------------------------------------- */
+function defaultProgress() {
+  return Object.fromEntries(
+    CATEGORIES.map((c) => [c.id, { studied: new Set(), quizBest: null }])
+  );
+}
+
+function withTimeout(promise, ms) {
+  return Promise.race([
+    promise,
+    new Promise((resolve) => setTimeout(() => resolve(null), ms)),
+  ]);
+}
+
+async function loadOneCategoryProgress(catId) {
+  try {
+    if (!window.storage || typeof window.storage.get !== "function") {
+      return { studied: new Set(), quizBest: null };
+    }
+    const res = await withTimeout(window.storage.get(`progress:${catId}`, false), 4000);
+    if (res && res.value) {
+      const parsed = JSON.parse(res.value);
+      return {
+        studied: new Set(parsed.studied || []),
+        quizBest: parsed.quizBest || null,
+      };
+    }
+    return { studied: new Set(), quizBest: null };
+  } catch (e) {
+    return { studied: new Set(), quizBest: null };
+  }
+}
+
+async function saveProgress(categoryId, progressForCat) {
+  try {
+    if (!window.storage || typeof window.storage.set !== "function") return;
+    await window.storage.set(
+      `progress:${categoryId}`,
+      JSON.stringify({
+        studied: Array.from(progressForCat.studied),
+        quizBest: progressForCat.quizBest,
+      }),
+      false
+    );
+  } catch (e) {
+    console.error("Erro ao salvar progresso", e);
+  }
+}
+
+async function loadLanguage() {
+  try {
+    if (!window.storage || typeof window.storage.get !== "function") return null;
+    const res = await withTimeout(window.storage.get("settings:lang", false), 3000);
+    if (res && res.value) return res.value;
+    return null;
+  } catch (e) {
+    return null;
+  }
+}
+
+async function saveLanguage(lang) {
+  try {
+    if (!window.storage || typeof window.storage.set !== "function") return;
+    await window.storage.set("settings:lang", lang, false);
+  } catch (e) {
+    console.error("Erro ao salvar idioma", e);
+  }
+}
+
+/* ---------------------------------------------------------
+   App
+--------------------------------------------------------- */
+function App() {
+  const [lang, setLang] = useState(null); // null = ainda não escolhido / carregando
+  const [view, setView] = useState("categories"); // categories | cards | quiz | quizBuilder
+  const [openCatId, setOpenCatId] = useState(null);
+  const [flipped, setFlipped] = useState({});
+  const [deckIndex, setDeckIndex] = useState({}); // categoryId -> index atual no baralho
+  const [progress, setProgress] = useState(defaultProgress);
+  const [syncing, setSyncing] = useState(true);
+  const [quiz, setQuiz] = useState(null);
+  const [quizBuilderSelection, setQuizBuilderSelection] = useState([]);
+
+  useEffect(() => {
+    let mounted = true;
+    Promise.all([
+      loadLanguage(),
+      Promise.all(CATEGORIES.map((c) => loadOneCategoryProgress(c.id).then((p) => [c.id, p]))),
+    ])
+      .then(([savedLang, pairs]) => {
+        if (!mounted) return;
+        setProgress((prev) => {
+          const next = { ...prev };
+          for (const [id, p] of pairs) next[id] = p;
+          return next;
+        });
+        setLang(savedLang || "__choose__");
+      })
+      .catch(() => {
+        if (mounted) setLang("__choose__");
+      })
+      .finally(() => {
+        if (mounted) setSyncing(false);
+      });
+    return () => {
+      mounted = false;
+    };
+  }, []);
+
+  const chooseLanguage = (code) => {
+    setLang(code);
+    saveLanguage(code);
+  };
+
+  const markStudied = useCallback((categoryId, index) => {
+    setProgress((prev) => {
+      if (!prev) return prev;
+      const catProg = prev[categoryId] || { studied: new Set(), quizBest: null };
+      if (catProg.studied.has(index)) return prev;
+      const nextSet = new Set(catProg.studied);
+      nextSet.add(index);
+      const nextCatProg = { ...catProg, studied: nextSet };
+      const next = { ...prev, [categoryId]: nextCatProg };
+      saveProgress(categoryId, nextCatProg);
+      return next;
+    });
+  }, []);
+
+  const saveQuizResult = useCallback((categoryId, score, total) => {
+    setProgress((prev) => {
+      if (!prev) return prev;
+      const catProg = prev[categoryId] || { studied: new Set(), quizBest: null };
+      const prevBest = catProg.quizBest;
+      const isBetter = !prevBest || score / total > prevBest.score / prevBest.total;
+      const nextBest = isBetter ? { score, total } : prevBest;
+      const nextCatProg = { ...catProg, quizBest: nextBest };
+      const next = { ...prev, [categoryId]: nextCatProg };
+      saveProgress(categoryId, nextCatProg);
+      return next;
+    });
+  }, []);
+
+  const toggleFlip = (key, categoryId, index) => {
+    setFlipped((f) => {
+      const nowFlipped = !f[key];
+      if (nowFlipped) markStudied(categoryId, index);
+      return { ...f, [key]: nowFlipped };
+    });
+  };
+
+  const openCategory = (id) => {
+    setOpenCatId(id);
+    setView("cards");
+  };
+
+  const startQuiz = (id) => {
+    const cat = CATEGORY_MAP[id];
+    setQuiz({
+      mode: "single",
+      categoryId: id,
+      items: buildQuiz(cat, lang),
+      index: 0,
+      score: 0,
+      selected: null,
+      finished: false,
+    });
+    setView("quiz");
+  };
+
+  const startCombinedQuiz = () => {
+    if (quizBuilderSelection.length === 0) return;
+    setQuiz({
+      mode: "combined",
+      categoryIds: quizBuilderSelection,
+      items: buildCombinedQuiz(quizBuilderSelection, lang),
+      index: 0,
+      score: 0,
+      selected: null,
+      finished: false,
+    });
+    setView("quiz");
+  };
+
+  const category = openCatId ? CATEGORY_MAP[openCatId] : null;
+  const strings = lang && lang !== "__choose__" ? lang : "pt";
+
+  if (lang === null) {
+    return <div style={styles.page} />;
+  }
+
+  return (
+    <div style={styles.page}>
+      <style>{GLOBAL_CSS}</style>
+
+      {syncing && <div style={styles.syncBadge}>…</div>}
+
+      {lang === "__choose__" ? (
+        <LanguageSelect onChoose={chooseLanguage} />
+      ) : view === "categories" ? (
+        <CategoryGrid
+          lang={lang}
+          onOpen={openCategory}
+          progress={progress}
+          onChangeLanguage={() => setLang("__choose__")}
+          onOpenQuizBuilder={() => {
+            setQuizBuilderSelection([]);
+            setView("quizBuilder");
+          }}
+        />
+      ) : view === "quizBuilder" ? (
+        <QuizBuilder
+          lang={lang}
+          selection={quizBuilderSelection}
+          setSelection={setQuizBuilderSelection}
+          onBack={() => setView("categories")}
+          onStart={startCombinedQuiz}
+        />
+      ) : view === "cards" ? (
+        <CardDeck
+          lang={lang}
+          category={category}
+          flipped={flipped}
+          toggleFlip={toggleFlip}
+          deckIndex={deckIndex[category.id] || 0}
+          setDeckIndexForCat={(i) =>
+            setDeckIndex((prev) => ({ ...prev, [category.id]: i }))
+          }
+          onBack={() => setView("categories")}
+          onQuiz={() => startQuiz(category.id)}
+          studied={progress[category.id]?.studied || new Set()}
+        />
+      ) : (
+        <QuizView
+          lang={lang}
+          quiz={quiz}
+          setQuiz={setQuiz}
+          onFinish={(score, total) => {
+            if (quiz.mode === "single") saveQuizResult(quiz.categoryId, score, total);
+          }}
+          onExit={() => setView(quiz && quiz.mode === "combined" ? "categories" : "cards")}
+          bestScore={
+            quiz && quiz.mode === "single" ? progress[quiz.categoryId]?.quizBest : null
+          }
+        />
+      )}
+    </div>
+  );
+}
+
+/* ---------------------------------------------------------
+   Tela: escolher idioma
+--------------------------------------------------------- */
+function LanguageSelect({ onChoose }) {
+  return (
+    <div style={styles.langWrap}>
+      <div style={styles.headerGlyph}>א</div>
+      <h1 style={styles.langTitle}>Choose your language</h1>
+      <p style={styles.langSubtitle}>Escolha o idioma · Elige el idioma · Scegli la lingua</p>
+      <div style={styles.langGrid}>
+        {LANGUAGES.map((l) => (
+          <button key={l.code} style={styles.langBtn} onClick={() => onChoose(l.code)}>
+            <span style={styles.langFlag}>{l.flag}</span>
+            <span style={styles.langLabel}>{l.label}</span>
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/* ---------------------------------------------------------
+   Tela: grade de categorias (pastas)
+--------------------------------------------------------- */
+function CategoryGrid({ lang, onOpen, progress, onChangeLanguage, onOpenQuizBuilder }) {
+  return (
+    <div style={styles.container}>
+      <header style={styles.header}>
+        <div style={styles.headerTopRow}>
+          <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
+            <div style={styles.headerGlyph}>א</div>
+            <div>
+              <h1 style={styles.title}>לוֹמְדִים עִבְרִית</h1>
+              <p style={styles.subtitle}>{t(lang, "appSubtitle")}</p>
+            </div>
+          </div>
+          <button style={styles.langChip} onClick={onChangeLanguage}>
+            {LANGUAGES.find((l) => l.code === lang)?.flag} {t(lang, "changeLanguage")}
+          </button>
+        </div>
+        <button className="action-btn" style={styles.combinedQuizBtn} onClick={onOpenQuizBuilder}>
+          🎲 {t(lang, "combinedQuizBtn")}
+        </button>
+      </header>
+
+      <div style={styles.grid}>
+        {CATEGORIES.map((c, i) => {
+          const studiedCount = progress[c.id]?.studied?.size || 0;
+          const pct = Math.round((studiedCount / c.words.length) * 100);
+          const best = progress[c.id]?.quizBest;
+          return (
+            <button
+              key={c.id}
+              className="cat-tile"
+              onClick={() => onOpen(c.id)}
+              style={{ ...styles.catTile, borderColor: c.accent }}
+            >
+              <span style={styles.catIcon}>{c.icon}</span>
+              <span style={{ ...styles.catGlyph, color: c.accent }}>{c.nameHe}</span>
+              <span style={styles.catIndex}>{String(i + 1).padStart(2, "0")}</span>
+              <span style={styles.catName}>{c.nameLoc[lang] || c.nameLoc.pt}</span>
+              <span style={styles.catCount}>
+                {studiedCount}/{c.words.length} {t(lang, "studied")}
+              </span>
+              <div style={styles.progressTrack}>
+                <div style={{ ...styles.progressFill, width: `${pct}%`, background: c.accent }} />
+              </div>
+              {best && (
+                <span style={{ ...styles.quizBadge, color: c.accent, borderColor: c.accent }}>
+                  quiz: {best.score}/{best.total}
+                </span>
+              )}
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+/* ---------------------------------------------------------
+   Tela: montar quiz combinado (seleção de pastas)
+--------------------------------------------------------- */
+function QuizBuilder({ lang, selection, setSelection, onBack, onStart }) {
+  const toggle = (id) => {
+    setSelection((prev) =>
+      prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]
+    );
+  };
+
+  const totalWords = Math.min(
+    MAX_QUIZ_WORDS,
+    selection.reduce((sum, id) => sum + (CATEGORY_MAP[id]?.words.length || 0), 0)
+  );
+
+  return (
+    <div style={styles.container}>
+      <header style={styles.header}>
+        <button className="back-btn" onClick={onBack} style={styles.backBtn}>
+          &larr; {t(lang, "backToHome")}
+        </button>
+        <h1 style={{ ...styles.title, fontSize: 26, marginTop: 10 }}>
+          🎲 {t(lang, "combinedQuizTitle")}
+        </h1>
+        <p style={styles.subtitle}>{t(lang, "combinedQuizSubtitle")}</p>
+      </header>
+
+      <div style={styles.builderActions}>
+        <button
+          className="back-btn"
+          style={styles.builderLinkBtn}
+          onClick={() => setSelection(CATEGORIES.map((c) => c.id))}
+        >
+          {t(lang, "selectAll")}
+        </button>
+        <button className="back-btn" style={styles.builderLinkBtn} onClick={() => setSelection([])}>
+          {t(lang, "clearAll")}
+        </button>
+      </div>
+
+      <div style={styles.grid}>
+        {CATEGORIES.map((c, i) => {
+          const isSelected = selection.includes(c.id);
+          return (
+            <button
+              key={c.id}
+              className="cat-tile"
+              onClick={() => toggle(c.id)}
+              style={{
+                ...styles.catTile,
+                borderColor: c.accent,
+                boxShadow: isSelected
+                  ? `0 0 0 3px ${c.accent}, 3px 4px 0 rgba(36,30,26,0.12)`
+                  : styles.catTile.boxShadow,
+              }}
+            >
+              <span style={styles.catIcon}>{c.icon}</span>
+              <span style={{ ...styles.catGlyph, color: c.accent }}>{c.nameHe}</span>
+              <span style={styles.catIndex}>{String(i + 1).padStart(2, "0")}</span>
+              <span style={styles.catName}>{c.nameLoc[lang] || c.nameLoc.pt}</span>
+              <span style={styles.catCount}>
+                {c.words.length} {t(lang, "wordsAvailable")}
+              </span>
+              {isSelected && (
+                <span style={{ ...styles.selectedCheck, background: c.accent }}>✓</span>
+              )}
+            </button>
+          );
+        })}
+      </div>
+
+      <div style={styles.builderFooter}>
+        {selection.length === 0 ? (
+          <p style={styles.builderHint}>{t(lang, "selectAtLeastOne")}</p>
+        ) : (
+          <p style={styles.builderHint}>
+            {selection.length} {selection.length === 1 ? "•" : "•"} {totalWords} {t(lang, "wordsAvailable")}
+          </p>
+        )}
+        <button
+          className="action-btn"
+          disabled={selection.length === 0}
+          onClick={onStart}
+          style={{
+            ...styles.quizBtn,
+            background: selection.length === 0 ? "#b8ac93" : "#7C2032",
+            cursor: selection.length === 0 ? "default" : "pointer",
+          }}
+        >
+          {t(lang, "startCombinedQuiz")}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+/* ---------------------------------------------------------
+   Tela: baralho de cartas (uma por vez, com deslizar)
+--------------------------------------------------------- */
+function CardDeck({ lang, category, flipped, toggleFlip, deckIndex, setDeckIndexForCat, onBack, onQuiz, studied }) {
+  const total = category.words.length;
+  const index = Math.min(deckIndex, total - 1);
+  const word = category.words[index];
+  const key = category.id + index;
+  const isFlipped = !!flipped[key];
+  const isStudied = studied.has(index);
+
+  const touchRef = React.useRef({ x: 0, active: false });
+
+  const goTo = (newIndex) => {
+    if (newIndex < 0 || newIndex >= total) return;
+    setDeckIndexForCat(newIndex);
+  };
+
+  const onTouchStart = (e) => {
+    touchRef.current = { x: e.touches[0].clientX, active: true };
+  };
+  const onTouchEnd = (e) => {
+    if (!touchRef.current.active) return;
+    const dx = e.changedTouches[0].clientX - touchRef.current.x;
+    touchRef.current.active = false;
+    if (Math.abs(dx) < 40) return;
+    if (dx < 0) goTo(index + 1);
+    else goTo(index - 1);
+  };
+
+  return (
+    <div style={styles.container}>
+      <header style={styles.header}>
+        <button className="back-btn" onClick={onBack} style={styles.backBtn}>
+          &larr; {t(lang, "backToFolders")}
+        </button>
+        <div style={styles.headerRow}>
+          <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
+            <span style={styles.catIconSmall}>{category.icon}</span>
+            <div>
+              <h1 style={{ ...styles.title, fontSize: 28 }}>{category.nameLoc[lang] || category.name}</h1>
+              <p style={styles.subtitle}>
+                {studied.size}/{total} {t(lang, "studied")}
+              </p>
+            </div>
+          </div>
+          <button className="action-btn" onClick={onQuiz} style={{ ...styles.quizBtn, background: category.accent }}>
+            {t(lang, "startQuiz")}
+          </button>
+        </div>
+      </header>
+
+      <div style={styles.deckArea} onTouchStart={onTouchStart} onTouchEnd={onTouchEnd}>
+        {/* cartas decorativas empilhadas atrás */}
+        <div style={{ ...styles.stackCard, transform: "translate(10px, 10px) rotate(4deg)" }} />
+        <div style={{ ...styles.stackCard, transform: "translate(5px, 5px) rotate(-3deg)" }} />
+
+        <div className="card-flip-outer" style={styles.deckFlipOuter} onClick={() => toggleFlip(key, category.id, index)}>
+          <div className={`card-flip-inner ${isFlipped ? "is-flipped" : ""}`}>
+            <div className="card-face" style={{ ...styles.deckFace, borderTop: `8px solid ${category.accent}` }}>
+              {isStudied && <div style={{ ...styles.studiedDot, background: category.accent }} />}
+              <div style={styles.hole} />
+              <div style={styles.deckFrontBody}>
+                <div style={styles.deckHebrewWord}>{word.he}</div>
+                <div style={{ ...styles.deckTranslit, color: category.accent }}>{word.tr}</div>
+              </div>
+              <div style={styles.flipHint}>{t(lang, "tapToFlip")}</div>
+            </div>
+
+            <div className="card-face card-back" style={{ ...styles.deckFace, borderTop: `8px solid ${category.accent}` }}>
+              <div style={styles.hole} />
+              <div style={styles.deckBackBody}>
+                <span style={{ ...styles.deckMeaningLabel, color: category.accent, borderColor: category.accent }}>
+                  {LANGUAGES.find((l) => l.code === lang)?.flag}
+                </span>
+                <span style={styles.deckMeaningValue}>{word[lang]}</span>
+              </div>
+              <div style={styles.flipHint}>{t(lang, "tapToFlip")}</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div style={styles.deckNav}>
+        <button
+          className="action-btn"
+          onClick={() => goTo(index - 1)}
+          disabled={index === 0}
+          style={{ ...styles.deckNavBtn, opacity: index === 0 ? 0.35 : 1 }}
+        >
+          ←
+        </button>
+        <span style={styles.deckCounter}>{t(lang, "cardOf", { n: index + 1, total })}</span>
+        <button
+          className="action-btn"
+          onClick={() => goTo(index + 1)}
+          disabled={index === total - 1}
+          style={{ ...styles.deckNavBtn, opacity: index === total - 1 ? 0.35 : 1 }}
+        >
+          →
+        </button>
+      </div>
+    </div>
+  );
+}
+
+/* ---------------------------------------------------------
+   Tela: quiz (individual ou combinado)
+--------------------------------------------------------- */
+function QuizView({ lang, quiz, setQuiz, onFinish, onExit, bestScore }) {
+  if (!quiz) return null;
+  const isCombined = quiz.mode === "combined";
+  const category = !isCombined ? CATEGORY_MAP[quiz.categoryId] : null;
+  const accentColor = isCombined ? "#7C2032" : category.accent;
+  const glyph = isCombined ? "🎲" : category.glyph;
+
+  if (quiz.finished) {
+    const pct = Math.round((quiz.score / quiz.items.length) * 100);
+    return (
+      <div style={styles.container}>
+        <div style={styles.quizResultWrap}>
+          <div style={{ ...styles.headerGlyph, color: accentColor, fontSize: 54 }}>{glyph}</div>
+          <h2 style={styles.resultTitle}>{t(lang, "resultTitle")}</h2>
+          <p style={styles.resultCategory}>
+            {isCombined ? t(lang, "combinedQuizHeader") : category.nameLoc[lang] || category.name}
+          </p>
+          <div style={{ ...styles.resultScore, color: accentColor }}>
+            {quiz.score} / {quiz.items.length}
+          </div>
+          <p style={styles.resultPct}>{pct}%</p>
+          {bestScore && (
+            <p style={styles.resultBest}>
+              {t(lang, "bestResult")}: {bestScore.score}/{bestScore.total}
+            </p>
+          )}
+          <div style={styles.resultActions}>
+            <button
+              className="action-btn"
+              style={{ ...styles.quizBtn, background: accentColor }}
+              onClick={() =>
+                setQuiz(
+                  isCombined
+                    ? {
+                        mode: "combined",
+                        categoryIds: quiz.categoryIds,
+                        items: buildCombinedQuiz(quiz.categoryIds, lang),
+                        index: 0,
+                        score: 0,
+                        selected: null,
+                        finished: false,
+                      }
+                    : {
+                        mode: "single",
+                        categoryId: category.id,
+                        items: buildQuiz(category, lang),
+                        index: 0,
+                        score: 0,
+                        selected: null,
+                        finished: false,
+                      }
+                )
+              }
+            >
+              {t(lang, "redoQuiz")}
+            </button>
+            <button className="back-btn" style={styles.backBtnBig} onClick={onExit}>
+              &larr; {isCombined ? t(lang, "backToHome") : t(lang, "backToCards")}
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  const q = quiz.items[quiz.index];
+  const answered = quiz.selected !== null;
+  const qAccent = isCombined ? q.accent : accentColor;
+
+  const choose = (opt) => {
+    if (answered) return;
+    const correct = opt === q.correct;
+    setQuiz((prev) => ({ ...prev, selected: opt, score: prev.score + (correct ? 1 : 0) }));
+  };
+
+  const next = () => {
+    const isLast = quiz.index + 1 >= quiz.items.length;
+    if (isLast) {
+      onFinish(quiz.score, quiz.items.length);
+      setQuiz((prev) => ({ ...prev, finished: true }));
+    } else {
+      setQuiz((prev) => ({ ...prev, index: prev.index + 1, selected: null }));
+    }
+  };
+
+  return (
+    <div style={styles.container}>
+      <header style={styles.header}>
+        <button className="back-btn" onClick={onExit} style={styles.backBtn}>
+          &larr; {t(lang, "exitQuiz")}
+        </button>
+        <div style={styles.headerRow}>
+          <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
+            <div style={{ ...styles.headerGlyph, color: accentColor, fontSize: 34 }}>{glyph}</div>
+            <div>
+              <h1 style={{ ...styles.title, fontSize: 24 }}>
+                {isCombined ? t(lang, "combinedQuizHeader") : category.nameLoc[lang] || category.name}
+              </h1>
+              <p style={styles.subtitle}>
+                {t(lang, "quizQuestionOf", { n: quiz.index + 1, total: quiz.items.length })} &middot; {t(lang, "points")}: {quiz.score}
+              </p>
+            </div>
+          </div>
+        </div>
+      </header>
+
+      <div style={styles.quizCard}>
+        <div style={styles.quizHebrew}>{q.word.he}</div>
+        <div style={{ ...styles.quizTranslit, color: qAccent }}>{q.word.tr}</div>
+        <p style={styles.quizPrompt}>{t(lang, "whatIsMeaning")}</p>
+
+        <div style={styles.quizOptions}>
+          {q.options.map((opt) => {
+            let bg = "#FBF6E9";
+            let border = "#d8cba9";
+            let textColor = "#241E1A";
+            if (answered) {
+              if (opt === q.correct) {
+                bg = "#e4f0e2";
+                border = "#4c7a44";
+                textColor = "#2f5233";
+              } else if (opt === quiz.selected) {
+                bg = "#f6e2e2";
+                border = "#a14343";
+                textColor = "#7c2032";
+              }
+            }
+            return (
+              <button
+                key={opt}
+                className="quiz-opt"
+                onClick={() => choose(opt)}
+                style={{
+                  ...styles.quizOptBtn,
+                  background: bg,
+                  borderColor: border,
+                  color: textColor,
+                  cursor: answered ? "default" : "pointer",
+                }}
+              >
+                {opt}
+              </button>
+            );
+          })}
+        </div>
+
+        {answered && (
+          <button
+            className="action-btn"
+            onClick={next}
+            style={{ ...styles.quizBtn, background: qAccent, marginTop: 22 }}
+          >
+            {quiz.index + 1 >= quiz.items.length ? t(lang, "seeResult") : t(lang, "nextQuestion")}
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/* ---------------------------------------------------------
+   Estilos
+--------------------------------------------------------- */
+const INK = "#241E1A";
+const STONE = "#E7DEC3";
+const CARD_FACE = "#FBF6E9";
+
+const GLOBAL_CSS = `
+  @import url('https://fonts.googleapis.com/css2?family=Frank+Ruhl+Libre:wght@400;500;700;900&family=Heebo:wght@300;400;500;700&display=swap');
+  * { box-sizing: border-box; }
+  html, body { margin: 0; }
+  .card-flip-outer { perspective: 1200px; }
+  .card-flip-inner {
+    position: relative;
+    width: 100%;
+    height: 100%;
+    transition: transform 0.5s cubic-bezier(.4,.2,.2,1);
+    transform-style: preserve-3d;
+  }
+  .card-flip-inner.is-flipped { transform: rotateY(180deg); }
+  .card-face {
+    position: absolute;
+    inset: 0;
+    backface-visibility: hidden;
+    -webkit-backface-visibility: hidden;
+    border-radius: 18px;
+  }
+  .card-back { transform: rotateY(180deg); }
+  .cat-tile:hover { transform: translateY(-4px); }
+  .cat-tile { transition: transform 0.2s ease; }
+  .back-btn:hover { opacity: 0.75; }
+  .quiz-opt:hover { filter: brightness(0.97); }
+  .action-btn:hover { filter: brightness(1.08); }
+`;
+
+const styles = {
+  page: {
+    minHeight: "100vh",
+    width: "100%",
+    background: STONE,
+    backgroundImage: "radial-gradient(circle at 1px 1px, rgba(36,30,26,0.06) 1px, transparent 0)",
+    backgroundSize: "18px 18px",
+    fontFamily: "'Heebo', sans-serif",
+    color: INK,
+    padding: "40px 20px 80px",
+  },
+  syncBadge: {
+    position: "fixed",
+    top: 14,
+    right: 18,
+    fontSize: 11.5,
+    color: "#5b5248",
+    background: "#FBF6E9",
+    border: "1px solid #d8cba9",
+    borderRadius: 20,
+    padding: "5px 12px",
+    zIndex: 10,
+  },
+  container: { maxWidth: 1100, margin: "0 auto" },
+
+  langWrap: {
+    minHeight: "80vh",
+    display: "flex",
+    flexDirection: "column",
+    alignItems: "center",
+    justifyContent: "center",
+    textAlign: "center",
+    gap: 6,
+    fontFamily: "'Heebo', sans-serif",
+  },
+  langTitle: {
+    fontFamily: "'Frank Ruhl Libre', serif",
+    fontSize: 28,
+    fontWeight: 700,
+    margin: "16px 0 4px",
+    color: INK,
+  },
+  langSubtitle: { color: "#5b5248", fontSize: 14, marginBottom: 30 },
+  langGrid: {
+    display: "grid",
+    gridTemplateColumns: "repeat(2, 1fr)",
+    gap: 14,
+    width: "min(360px, 80vw)",
+  },
+  langBtn: {
+    background: "#FBF6E9",
+    border: "2px solid #d8cba9",
+    borderRadius: 14,
+    padding: "20px 10px",
+    display: "flex",
+    flexDirection: "column",
+    alignItems: "center",
+    gap: 8,
+    cursor: "pointer",
+    boxShadow: "3px 4px 0 rgba(36,30,26,0.12)",
+  },
+  langFlag: { fontSize: 32 },
+  langLabel: { fontFamily: "'Frank Ruhl Libre', serif", fontWeight: 700, fontSize: 15, color: INK },
+
+  header: { marginBottom: 24 },
+  headerTopRow: {
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "space-between",
+    flexWrap: "wrap",
+    gap: 12,
+    marginBottom: 14,
+  },
+  headerRow: {
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "space-between",
+    flexWrap: "wrap",
+    gap: 14,
+    marginTop: 10,
+  },
+  headerGlyph: {
+    fontFamily: "'Frank Ruhl Libre', serif",
+    fontSize: 46,
+    fontWeight: 900,
+    color: "#7C2032",
+    lineHeight: 1,
+  },
+  title: {
+    fontFamily: "'Frank Ruhl Libre', serif",
+    fontWeight: 700,
+    fontSize: 34,
+    margin: "0 0 2px",
+    letterSpacing: 0.5,
+  },
+  subtitle: { margin: 0, fontSize: 14, color: "#5b5248", letterSpacing: 0.3 },
+  langChip: {
+    background: "#FBF6E9",
+    border: "1.5px solid #d8cba9",
+    borderRadius: 20,
+    padding: "6px 14px",
+    fontSize: 13,
+    fontFamily: "'Heebo', sans-serif",
+    cursor: "pointer",
+    color: INK,
+  },
+  combinedQuizBtn: {
+    border: "none",
+    color: "#FBF6E9",
+    background: "#7C2032",
+    fontFamily: "'Heebo', sans-serif",
+    fontWeight: 700,
+    fontSize: 14,
+    padding: "12px 18px",
+    borderRadius: 10,
+    cursor: "pointer",
+    boxShadow: "2px 3px 0 rgba(36,30,26,0.18)",
+  },
+  backBtn: {
+    background: "none",
+    border: "none",
+    color: "#5b5248",
+    fontFamily: "'Heebo', sans-serif",
+    fontSize: 14,
+    cursor: "pointer",
+    padding: 0,
+    opacity: 0.9,
+  },
+  backBtnBig: {
+    background: "none",
+    border: "none",
+    color: "#5b5248",
+    fontFamily: "'Heebo', sans-serif",
+    fontSize: 15,
+    cursor: "pointer",
+    padding: "10px 0",
+  },
+  quizBtn: {
+    border: "none",
+    color: "#FBF6E9",
+    fontFamily: "'Heebo', sans-serif",
+    fontWeight: 700,
+    fontSize: 14,
+    padding: "11px 20px",
+    borderRadius: 8,
+    cursor: "pointer",
+    boxShadow: "2px 3px 0 rgba(36,30,26,0.18)",
+  },
+
+  grid: {
+    display: "grid",
+    gridTemplateColumns: "repeat(auto-fill, minmax(190px, 1fr))",
+    gap: 18,
+  },
+  catTile: {
+    background: CARD_FACE,
+    border: "2px solid",
+    borderRadius: 12,
+    padding: "18px 18px 18px",
+    display: "flex",
+    flexDirection: "column",
+    alignItems: "flex-start",
+    cursor: "pointer",
+    boxShadow: "3px 4px 0 rgba(36,30,26,0.12)",
+    textAlign: "left",
+    position: "relative",
+    minHeight: 168,
+  },
+  catIcon: { fontSize: 30, marginBottom: 8 },
+  catIconSmall: { fontSize: 30 },
+  catGlyph: {
+    fontFamily: "'Frank Ruhl Libre', serif",
+    fontSize: 16,
+    fontWeight: 700,
+    position: "absolute",
+    top: 16,
+    right: 16,
+    left: 16,
+    opacity: 0.9,
+    textAlign: "right",
+    direction: "rtl",
+    lineHeight: 1.15,
+  },
+  catIndex: { fontSize: 11, color: "#a89c86", letterSpacing: 1, marginBottom: 8 },
+  catName: {
+    fontFamily: "'Frank Ruhl Libre', serif",
+    fontWeight: 700,
+    fontSize: 19,
+    marginBottom: 4,
+  },
+  catCount: { fontSize: 12.5, color: "#5b5248", marginBottom: 10 },
+  progressTrack: { width: "100%", height: 6, borderRadius: 4, background: "#e6dcc0", overflow: "hidden" },
+  progressFill: { height: "100%", borderRadius: 4 },
+  quizBadge: {
+    marginTop: 10,
+    fontSize: 11,
+    fontWeight: 700,
+    border: "1.5px solid",
+    borderRadius: 6,
+    padding: "2px 8px",
+  },
+  selectedCheck: {
+    position: "absolute",
+    bottom: 14,
+    right: 14,
+    width: 24,
+    height: 24,
+    borderRadius: "50%",
+    color: "#fff",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    fontSize: 13,
+    fontWeight: 700,
+  },
+
+  builderActions: { display: "flex", gap: 16, marginBottom: 14 },
+  builderLinkBtn: {
+    background: "none",
+    border: "none",
+    color: "#7C2032",
+    fontFamily: "'Heebo', sans-serif",
+    fontSize: 13,
+    fontWeight: 700,
+    cursor: "pointer",
+    padding: 0,
+    textDecoration: "underline",
+  },
+  builderFooter: {
+    marginTop: 26,
+    display: "flex",
+    flexDirection: "column",
+    alignItems: "center",
+    gap: 10,
+  },
+  builderHint: { fontSize: 13, color: "#5b5248", margin: 0 },
+
+  deckArea: {
+    position: "relative",
+    maxWidth: 340,
+    margin: "10px auto 0",
+    aspectRatio: "3 / 4.2",
+  },
+  stackCard: {
+    position: "absolute",
+    inset: 0,
+    background: "#FBF6E9",
+    borderRadius: 18,
+    boxShadow: "2px 3px 0 rgba(36,30,26,0.10)",
+    border: "1px solid #e3d7b8",
+  },
+  deckFlipOuter: { width: "100%", height: "100%", cursor: "pointer", position: "relative" },
+  deckFace: {
+    background: CARD_FACE,
+    borderRadius: 18,
+    boxShadow: "4px 6px 0 rgba(36,30,26,0.16)",
+    display: "flex",
+    flexDirection: "column",
+    alignItems: "center",
+    justifyContent: "center",
+    padding: "26px 20px",
+  },
+  studiedDot: { position: "absolute", top: 18, left: 18, width: 10, height: 10, borderRadius: "50%" },
+  hole: {
+    position: "absolute",
+    top: 16,
+    right: 20,
+    width: 12,
+    height: 12,
+    borderRadius: "50%",
+    background: STONE,
+    boxShadow: "inset 1px 1px 2px rgba(0,0,0,0.25)",
+  },
+  deckFrontBody: {
+    display: "flex",
+    flexDirection: "column",
+    alignItems: "center",
+    justifyContent: "center",
+    flex: 1,
+    gap: 16,
+  },
+  deckHebrewWord: {
+    fontFamily: "'Frank Ruhl Libre', serif",
+    fontWeight: 700,
+    fontSize: 42,
+    textAlign: "center",
+    direction: "rtl",
+  },
+  deckTranslit: { fontSize: 18, fontStyle: "italic", fontWeight: 500, textAlign: "center" },
+  deckBackBody: {
+    display: "flex",
+    flexDirection: "column",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 16,
+    flex: 1,
+  },
+  deckMeaningLabel: {
+    fontSize: 24,
+    fontWeight: 700,
+    border: "2px solid",
+    borderRadius: 10,
+    padding: "6px 14px",
+  },
+  deckMeaningValue: { fontFamily: "'Frank Ruhl Libre', serif", fontSize: 30, fontWeight: 600, textAlign: "center" },
+  flipHint: { position: "absolute", bottom: 14, fontSize: 11, color: "#a89c86", letterSpacing: 0.5 },
+
+  deckNav: {
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 24,
+    marginTop: 22,
+  },
+  deckNavBtn: {
+    border: "none",
+    background: "#7C2032",
+    color: "#FBF6E9",
+    width: 46,
+    height: 46,
+    borderRadius: "50%",
+    fontSize: 20,
+    cursor: "pointer",
+    boxShadow: "2px 3px 0 rgba(36,30,26,0.18)",
+  },
+  deckCounter: { fontSize: 13, color: "#5b5248", minWidth: 130, textAlign: "center" },
+
+  quizCard: {
+    background: CARD_FACE,
+    borderRadius: 16,
+    boxShadow: "4px 6px 0 rgba(36,30,26,0.14)",
+    padding: "40px 30px",
+    maxWidth: 480,
+    margin: "0 auto",
+    display: "flex",
+    flexDirection: "column",
+    alignItems: "center",
+    textAlign: "center",
+  },
+  quizHebrew: { fontFamily: "'Frank Ruhl Libre', serif", fontWeight: 700, fontSize: 40, direction: "rtl" },
+  quizTranslit: { fontSize: 15, fontStyle: "italic", fontWeight: 500, marginTop: 6 },
+  quizPrompt: { fontSize: 13.5, color: "#5b5248", marginTop: 22, marginBottom: 16, letterSpacing: 0.3 },
+  quizOptions: { display: "flex", flexDirection: "column", gap: 10, width: "100%" },
+  quizOptBtn: {
+    border: "2px solid",
+    borderRadius: 10,
+    padding: "12px 16px",
+    fontFamily: "'Frank Ruhl Libre', serif",
+    fontSize: 16,
+    fontWeight: 500,
+    textAlign: "left",
+  },
+
+  quizResultWrap: {
+    maxWidth: 420,
+    margin: "60px auto 0",
+    display: "flex",
+    flexDirection: "column",
+    alignItems: "center",
+    textAlign: "center",
+    gap: 4,
+  },
+  resultTitle: { fontFamily: "'Frank Ruhl Libre', serif", fontSize: 24, fontWeight: 700, margin: "10px 0 0" },
+  resultCategory: { color: "#5b5248", fontSize: 14, margin: "2px 0 20px" },
+  resultScore: { fontFamily: "'Frank Ruhl Libre', serif", fontSize: 52, fontWeight: 900 },
+  resultPct: { fontSize: 14, color: "#5b5248", marginTop: 4 },
+  resultBest: { fontSize: 13, color: "#a89c86", marginTop: 6 },
+  resultActions: { display: "flex", flexDirection: "column", gap: 6, alignItems: "center", marginTop: 26 },
+};
+
+
+  const root = ReactDOM.createRoot(document.getElementById("root"));
+  root.render(<App />);
+} catch (err) {
+  var box = document.getElementById("boot-error");
+  if (box) {
+    box.style.display = "block";
+    box.textContent = "Erro ao iniciar o app:\n\n" + (err && err.message ? err.message : String(err));
+  }
+  console.error(err);
+}
+</script>
+</body>
+</html>
