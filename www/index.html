@@ -1,0 +1,2695 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+<meta name="apple-mobile-web-app-title" content="Ivrit" />
+<meta name="theme-color" content="#7C2032" />
+<link rel="apple-touch-icon" href="icon.png" />
+<link rel="manifest" href="manifest.json" />
+<title>Aprender Hebraico</title>
+<script src="vendor/react.production.min.js"></script>
+<script src="vendor/react-dom.production.min.js"></script>
+<script src="vendor/babel.min.js"></script>
+<script>
+Babel.registerPreset("react-classic", {
+  plugins: [
+    [Babel.availablePlugins["transform-react-jsx"], { runtime: "classic" }]
+  ]
+});
+</script>
+<style>
+  html, body { margin: 0; padding: 0; background: #E7DEC3; }
+  #root { min-height: 100vh; }
+  #boot-error {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: #7C2032;
+    color: #FBF6E9;
+    font-family: -apple-system, sans-serif;
+    padding: 24px;
+    box-sizing: border-box;
+    overflow: auto;
+    z-index: 9999;
+    white-space: pre-wrap;
+    font-size: 14px;
+    line-height: 1.5;
+  }
+</style>
+</head>
+<body>
+<div id="root"></div>
+<div id="boot-error"></div>
+
+<script>
+window.addEventListener("error", function (e) {
+  var box = document.getElementById("boot-error");
+  if (!box) return;
+  box.style.display = "block";
+  box.textContent =
+    "Ocorreu um erro ao carregar o app:\n\n" +
+    (e.message || "erro desconhecido") +
+    (e.filename ? "\n\nArquivo: " + e.filename + ":" + e.lineno : "");
+});
+
+window.storage = {
+  get: function (key) {
+    return new Promise(function (resolve) {
+      try {
+        var raw = localStorage.getItem("hs_" + key);
+        if (raw === null) { resolve(null); return; }
+        resolve({ key: key, value: raw, shared: false });
+      } catch (e) { resolve(null); }
+    });
+  },
+  set: function (key, value) {
+    return new Promise(function (resolve) {
+      try {
+        localStorage.setItem("hs_" + key, value);
+        resolve({ key: key, value: value, shared: false });
+      } catch (e) { resolve(null); }
+    });
+  },
+  delete: function (key) {
+    return new Promise(function (resolve) {
+      try {
+        localStorage.removeItem("hs_" + key);
+        resolve({ key: key, deleted: true, shared: false });
+      } catch (e) { resolve(null); }
+    });
+  },
+  list: function (prefix) {
+    return new Promise(function (resolve) {
+      try {
+        var p = "hs_" + (prefix || "");
+        var keys = Object.keys(localStorage)
+          .filter(function (k) { return k.indexOf(p) === 0; })
+          .map(function (k) { return k.slice(3); });
+        resolve({ keys: keys, prefix: prefix, shared: false });
+      } catch (e) { resolve(null); }
+    });
+  }
+};
+</script>
+
+<script type="text/babel" data-presets="react-classic">
+try {
+  const { useState, useEffect, useCallback } = React;
+
+  /* ---------------------------------------------------------
+   Dados: categorias e cartas (50 por pasta)
+--------------------------------------------------------- */
+const CATEGORIES = [
+  {
+    id: "frutas",
+    name: "Frutas",
+    icon: "🍎",
+    nameLoc: { pt: "Frutas", en: "Fruits", es: "Frutas", it: "Frutta" },
+    glyph: "ת",
+    nameHe: "פירות",
+    accent: "#7C2032",
+    words: [
+      { he: "תפוח", tr: "tapuach", pt: "maçã", es: "manzana", en: "apple", it: "mela", level: "basico", emoji: "🍎" },
+      { he: "בננה", tr: "banana", pt: "banana", es: "banana", en: "banana", it: "banana", level: "basico", emoji: "🍌" },
+      { he: "תפוז", tr: "tapuz", pt: "laranja", es: "naranja", en: "orange", it: "arancia", level: "basico", emoji: "🍊" },
+      { he: "ענבים", tr: "anavim", pt: "uvas", es: "uvas", en: "grapes", it: "uva", level: "basico", emoji: "🍇" },
+      { he: "אבטיח", tr: "avatiach", pt: "melancia", es: "sandía", en: "watermelon", it: "anguria", level: "basico", emoji: "🍉" },
+      { he: "תות", tr: "tut", pt: "morango", es: "fresa", en: "strawberry", it: "fragola", level: "basico", emoji: "🍓" },
+      { he: "אננס", tr: "ananas", pt: "abacaxi", es: "piña", en: "pineapple", it: "ananas", level: "basico", emoji: "🍍" },
+      { he: "אגס", tr: "agas", pt: "pera", es: "pera", en: "pear", it: "pera", level: "basico", emoji: "🍐" },
+      { he: "לימון", tr: "limon", pt: "limão", es: "limón", en: "lemon", it: "limone", level: "basico", emoji: "🍋" },
+      { he: "אפרסק", tr: "afarsek", pt: "pêssego", es: "durazno", en: "peach", it: "pesca", level: "basico", emoji: "🍑" },
+      { he: "מנגו", tr: "mango", pt: "manga", es: "mango", en: "mango", it: "mango", level: "basico", emoji: "🥭" },
+      { he: "מלון", tr: "melon", pt: "melão", es: "melón", en: "melon", it: "melone", level: "basico", emoji: "🍈" },
+      { he: "דובדבן", tr: "duvdevan", pt: "cereja", es: "cereza", en: "cherry", it: "ciliegia", level: "basico", emoji: "🍒" },
+      { he: "תאנה", tr: "te'ena", pt: "figo", es: "higo", en: "fig", it: "fico", level: "basico", emoji: "🍇" },
+      { he: "קוקוס", tr: "kokos", pt: "coco", es: "coco", en: "coconut", it: "cocco", level: "basico", emoji: "🥥" },
+      { he: "אשכולית", tr: "eshkolit", pt: "toranja", es: "pomelo", en: "grapefruit", it: "pompelmo", level: "basico", emoji: "🍊" },
+      { he: "קלמנטינה", tr: "klementina", pt: "clementina", es: "clementina", en: "clementine", it: "clementina", level: "basico", emoji: "🍊" },
+      { he: "שזיף", tr: "shezif", pt: "ameixa", es: "ciruela", en: "plum", it: "prugna", level: "medio", emoji: "🍑" },
+      { he: "רימון", tr: "rimon", pt: "romã", es: "granada", en: "pomegranate", it: "melagrana", level: "medio", emoji: "🍎" },
+      { he: "פפאיה", tr: "papaya", pt: "mamão", es: "papaya", en: "papaya", it: "papaya", level: "medio", emoji: "🥭" },
+      { he: "קיווי", tr: "kiwi", pt: "kiwi", es: "kiwi", en: "kiwi", it: "kiwi", level: "medio", emoji: "🥝" },
+      { he: "ליים", tr: "laim", pt: "lima", es: "lima", en: "lime", it: "lime", level: "medio", emoji: "🍋" },
+      { he: "משמש", tr: "mishmesh", pt: "damasco", es: "albaricoque", en: "apricot", it: "albicocca", level: "medio", emoji: "🍑" },
+      { he: "פומלה", tr: "pomela", pt: "pomelo grande", es: "pomelo", en: "pomelo", it: "pummelo", level: "medio", emoji: "🍊" },
+      { he: "חבוש", tr: "chabush", pt: "marmelo", es: "membrillo", en: "quince", it: "mela cotogna", level: "medio", emoji: "🍐" },
+      { he: "שסק", tr: "sheseq", pt: "níspera", es: "níspero", en: "loquat", it: "nespola", level: "medio", emoji: "🍑" },
+      { he: "תמר", tr: "tamar", pt: "tâmara", es: "dátil", en: "date", it: "dattero", level: "medio", emoji: "🌴" },
+      { he: "אוכמניות", tr: "uchmaniyot", pt: "mirtilos", es: "arándanos", en: "blueberries", it: "mirtilli", level: "medio", emoji: "🫐" },
+      { he: "פטל", tr: "petel", pt: "framboesa", es: "frambuesa", en: "raspberry", it: "lampone", level: "medio", emoji: "🍇" },
+      { he: "דומדמנית", tr: "dumdemanit", pt: "groselha", es: "grosella", en: "gooseberry", it: "uva spina", level: "medio", emoji: "🍇" },
+      { he: "אבוקדו", tr: "avocado", pt: "abacate", es: "aguacate", en: "avocado", it: "avocado", level: "medio", emoji: "🥑" },
+      { he: "גויאבה", tr: "guava", pt: "goiaba", es: "guayaba", en: "guava", it: "guava", level: "medio", emoji: "🍈" },
+      { he: "מנגוסטן", tr: "mangostan", pt: "mangostão", es: "mangostán", en: "mangosteen", it: "mangostano", level: "medio", emoji: "🥭" },
+      { he: "פסיפלורה", tr: "passiflora", pt: "maracujá", es: "maracuyá", en: "passion fruit", it: "frutto della passione", level: "medio", emoji: "🥭" },
+      { he: "ליצ'י", tr: "litchi", pt: "lichia", es: "lichi", en: "lychee", it: "litchi", level: "forte", emoji: "🍇" },
+      { he: "שקד", tr: "shaked", pt: "amêndoa", es: "almendra", en: "almond", it: "mandorla", level: "forte", emoji: "🌰" },
+      { he: "אגוז", tr: "egoz", pt: "noz", es: "nuez", en: "walnut", it: "noce", level: "forte", emoji: "🌰" },
+      { he: "בוטן", tr: "boten", pt: "amendoim", es: "maní", en: "peanut", it: "arachide", level: "forte", emoji: "🥜" },
+      { he: "קשיו", tr: "kashiu", pt: "castanha-de-caju", es: "anacardo", en: "cashew", it: "anacardo", level: "forte", emoji: "🌰" },
+      { he: "פקאן", tr: "pekan", pt: "noz-pecã", es: "pecana", en: "pecan", it: "noce pecan", level: "forte", emoji: "🌰" },
+      { he: "פיסטוק", tr: "pistuk", pt: "pistache", es: "pistacho", en: "pistachio", it: "pistacchio", level: "forte", emoji: "🌰" },
+      { he: "צימוק", tr: "tsimuk", pt: "passas", es: "pasas", en: "raisin", it: "uvetta", level: "forte", emoji: "🍇" },
+      { he: "תות עץ", tr: "tut ets", pt: "amora", es: "mora", en: "mulberry", it: "mora di gelso", level: "forte", emoji: "🫐" },
+      { he: "אפרסמון", tr: "afarsemon", pt: "caqui", es: "caqui", en: "persimmon", it: "cachi", level: "forte", emoji: "🍊" },
+      { he: "צבר", tr: "tsabar", pt: "figo-da-índia", es: "higo chumbo", en: "prickly pear", it: "fico d'India", level: "forte", emoji: "🌵" },
+      { he: "אגס סיני", tr: "agas sini", pt: "pera asiática", es: "pera asiática", en: "asian pear", it: "pera asiatica", level: "forte", emoji: "🍐" },
+      { he: "קומקוואט", tr: "kumkvat", pt: "kumquat", es: "kumquat", en: "kumquat", it: "kumquat", level: "forte", emoji: "🍊" },
+      { he: "קרמבולה", tr: "karambola", pt: "carambola", es: "carambola", en: "starfruit", it: "carambola", level: "forte", emoji: "⭐" },
+      { he: "דוריאן", tr: "durian", pt: "durian", es: "durián", en: "durian", it: "durian", level: "forte", emoji: "🥥" },
+      { he: "רמבוטן", tr: "rambutan", pt: "rambutan", es: "rambután", en: "rambutan", it: "rambutan", level: "forte", emoji: "🔴" },
+    ],
+  },
+  {
+    id: "verbos",
+    name: "Verbos",
+    icon: "🏃",
+    nameLoc: { pt: "Verbos", en: "Verbs", es: "Verbos", it: "Verbi" },
+    glyph: "פ",
+    nameHe: "פעלים",
+    accent: "#1B4A52",
+    words: [
+      { he: "לאכול", tr: "le'echol", pt: "comer", es: "comer", en: "to eat", it: "mangiare", level: "basico", emoji: "🍽️" , binyan: "פָּעַל", binyanTr: "pa'al", pastHe: "אכל", pastTr: "achal", presentHe: "אוכל", presentTr: "ochel", futureHe: "יאכל", futureTr: "yochal" },
+      { he: "לשתות", tr: "lishtot", pt: "beber", es: "beber", en: "to drink", it: "bere", level: "basico", emoji: "🥤" , binyan: "פָּעַל", binyanTr: "pa'al", pastHe: "שתה", pastTr: "shata", presentHe: "שותה", presentTr: "shote", futureHe: "ישתה", futureTr: "yishte" },
+      { he: "ללכת", tr: "lalechet", pt: "andar", es: "caminar", en: "to walk", it: "camminare", level: "basico", emoji: "🚶" , binyan: "פָּעַל", binyanTr: "pa'al", pastHe: "הלך", pastTr: "halach", presentHe: "הולך", presentTr: "holech", futureHe: "ילך", futureTr: "yelech" },
+      { he: "לרוץ", tr: "laruts", pt: "correr", es: "correr", en: "to run", it: "correre", level: "basico", emoji: "🏃" , binyan: "פָּעַל", binyanTr: "pa'al", pastHe: "רץ", pastTr: "rats", presentHe: "רץ", presentTr: "rats", futureHe: "ירוץ", futureTr: "yaruts" },
+      { he: "לישון", tr: "lishon", pt: "dormir", es: "dormir", en: "to sleep", it: "dormire", level: "basico", emoji: "😴" , binyan: "פָּעַל", binyanTr: "pa'al", pastHe: "ישן", pastTr: "yashan", presentHe: "ישן", presentTr: "yashen", futureHe: "יישן", futureTr: "yishan" },
+      { he: "לקרוא", tr: "likro", pt: "ler", es: "leer", en: "to read", it: "leggere", level: "basico", emoji: "📖" , binyan: "פָּעַל", binyanTr: "pa'al", pastHe: "קרא", pastTr: "kara", presentHe: "קורא", presentTr: "kore", futureHe: "יקרא", futureTr: "yikra" },
+      { he: "לכתוב", tr: "lichtov", pt: "escrever", es: "escribir", en: "to write", it: "scrivere", level: "basico", emoji: "✍️" , binyan: "פָּעַל", binyanTr: "pa'al", pastHe: "כתב", pastTr: "katav", presentHe: "כותב", presentTr: "kotev", futureHe: "יכתוב", futureTr: "yichtov" },
+      { he: "לדבר", tr: "ledaber", pt: "falar", es: "hablar", en: "to speak", it: "parlare", level: "basico", emoji: "🗣️" , binyan: "פִּיעֵל", binyanTr: "piel", pastHe: "דיבר", pastTr: "diber", presentHe: "מדבר", presentTr: "medaber", futureHe: "ידבר", futureTr: "yedaber" },
+      { he: "לראות", tr: "lir'ot", pt: "ver", es: "ver", en: "to see", it: "vedere", level: "basico", emoji: "👀" , binyan: "פָּעַל", binyanTr: "pa'al", pastHe: "ראה", pastTr: "ra'ah", presentHe: "רואה", presentTr: "ro'eh", futureHe: "יראה", futureTr: "yir'eh" },
+      { he: "לשמוע", tr: "lishmoa", pt: "ouvir", es: "oír", en: "to hear", it: "sentire", level: "basico", emoji: "👂" , binyan: "פָּעַל", binyanTr: "pa'al", pastHe: "שמע", pastTr: "shama", presentHe: "שומע", presentTr: "shome'a", futureHe: "ישמע", futureTr: "yishma" },
+      { he: "ללמוד", tr: "lilmod", pt: "estudar", es: "estudiar", en: "to study", it: "studiare", level: "basico", emoji: "📚" , binyan: "פָּעַל", binyanTr: "pa'al", pastHe: "למד", pastTr: "lamad", presentHe: "לומד", presentTr: "lomed", futureHe: "ילמד", futureTr: "yilmad" },
+      { he: "לעבוד", tr: "la'avod", pt: "trabalhar", es: "trabajar", en: "to work", it: "lavorare", level: "basico", emoji: "💼" , binyan: "פָּעַל", binyanTr: "pa'al", pastHe: "עבד", pastTr: "avad", presentHe: "עובד", presentTr: "oved", futureHe: "יעבוד", futureTr: "ya'avod" },
+      { he: "לקנות", tr: "liknot", pt: "comprar", es: "comprar", en: "to buy", it: "comprare", level: "basico", emoji: "🛍️" , binyan: "פָּעַל", binyanTr: "pa'al", pastHe: "קנה", pastTr: "kana", presentHe: "קונה", presentTr: "kone", futureHe: "יקנה", futureTr: "yikne" },
+      { he: "לשחק", tr: "lesachek", pt: "brincar", es: "jugar", en: "to play", it: "giocare", level: "basico", emoji: "🎲" , binyan: "פִּיעֵל", binyanTr: "piel", pastHe: "שיחק", pastTr: "sichek", presentHe: "משחק", presentTr: "mesachek", futureHe: "ישחק", futureTr: "yesachek" },
+      { he: "לאהוב", tr: "le'ehov", pt: "amar", es: "amar", en: "to love", it: "amare", level: "basico", emoji: "❤️" , binyan: "פָּעַל", binyanTr: "pa'al", pastHe: "אהב", pastTr: "ahav", presentHe: "אוהב", presentTr: "ohev", futureHe: "יאהב", futureTr: "ye'ehav" },
+      { he: "לרקוד", tr: "lirkod", pt: "dançar", es: "bailar", en: "to dance", it: "ballare", level: "basico", emoji: "💃" , binyan: "פָּעַל", binyanTr: "pa'al", pastHe: "רקד", pastTr: "rakad", presentHe: "רוקד", presentTr: "roked", futureHe: "ירקוד", futureTr: "yirkod" },
+      { he: "לשיר", tr: "lashir", pt: "cantar", es: "cantar", en: "to sing", it: "cantare", level: "basico", emoji: "🎤" , binyan: "פָּעַל", binyanTr: "pa'al", pastHe: "שר", pastTr: "shar", presentHe: "שר", presentTr: "shar", futureHe: "ישיר", futureTr: "yashir" },
+      { he: "לצייר", tr: "letsayer", pt: "desenhar", es: "dibujar", en: "to draw", it: "disegnare", level: "medio", emoji: "🎨" , binyan: "פִּיעֵל", binyanTr: "piel", pastHe: "צייר", pastTr: "tsiyer", presentHe: "מצייר", presentTr: "metsayer", futureHe: "יצייר", futureTr: "yetsayer" },
+      { he: "לבשל", tr: "levashel", pt: "cozinhar", es: "cocinar", en: "to cook", it: "cucinare", level: "medio", emoji: "🍳" , binyan: "פִּיעֵל", binyanTr: "piel", pastHe: "בישל", pastTr: "bishel", presentHe: "מבשל", presentTr: "mevashel", futureHe: "יבשל", futureTr: "yevashel" },
+      { he: "לנקות", tr: "lenakot", pt: "limpar", es: "limpiar", en: "to clean", it: "pulire", level: "medio", emoji: "🧹" , binyan: "פִּיעֵל", binyanTr: "piel", pastHe: "ניקה", pastTr: "nika", presentHe: "מנקה", presentTr: "menake", futureHe: "ינקה", futureTr: "yenake" },
+      { he: "למכור", tr: "limkor", pt: "vender", es: "vender", en: "to sell", it: "vendere", level: "medio", emoji: "💰" , binyan: "פָּעַל", binyanTr: "pa'al", pastHe: "מכר", pastTr: "machar", presentHe: "מוכר", presentTr: "mocher", futureHe: "ימכור", futureTr: "yimkor" },
+      { he: "לפתוח", tr: "liftoach", pt: "abrir", es: "abrir", en: "to open", it: "aprire", level: "medio", emoji: "🚪" , binyan: "פָּעַל", binyanTr: "pa'al", pastHe: "פתח", pastTr: "patach", presentHe: "פותח", presentTr: "pote'ach", futureHe: "יפתח", futureTr: "yiftach" },
+      { he: "לסגור", tr: "lisgor", pt: "fechar", es: "cerrar", en: "to close", it: "chiudere", level: "medio", emoji: "🔒" , binyan: "פָּעַל", binyanTr: "pa'al", pastHe: "סגר", pastTr: "sagar", presentHe: "סוגר", presentTr: "soger", futureHe: "יסגור", futureTr: "yisgor" },
+      { he: "לשבת", tr: "lashevet", pt: "sentar", es: "sentarse", en: "to sit", it: "sedersi", level: "medio", emoji: "🪑" , binyan: "פָּעַל", binyanTr: "pa'al", pastHe: "ישב", pastTr: "yashav", presentHe: "יושב", presentTr: "yoshev", futureHe: "ישב", futureTr: "yeshev" },
+      { he: "לקום", tr: "lakum", pt: "levantar", es: "levantarse", en: "to get up", it: "alzarsi", level: "medio", emoji: "⬆️" , binyan: "פָּעַל", binyanTr: "pa'al", pastHe: "קם", pastTr: "kam", presentHe: "קם", presentTr: "kam", futureHe: "יקום", futureTr: "yakum" },
+      { he: "לעצור", tr: "la'atsor", pt: "parar", es: "parar", en: "to stop", it: "fermarsi", level: "medio", emoji: "✋" , binyan: "פָּעַל", binyanTr: "pa'al", pastHe: "עצר", pastTr: "atsar", presentHe: "עוצר", presentTr: "otser", futureHe: "יעצור", futureTr: "ya'atsor" },
+      { he: "להתחיל", tr: "lehatchil", pt: "começar", es: "empezar", en: "to begin", it: "iniziare", level: "medio", emoji: "🏁" , binyan: "הִפְעִיל", binyanTr: "hif'il", pastHe: "התחיל", pastTr: "hitchil", presentHe: "מתחיל", presentTr: "matchil", futureHe: "יתחיל", futureTr: "yatchil" },
+      { he: "לגמור", tr: "ligmor", pt: "terminar", es: "terminar", en: "to finish", it: "finire", level: "medio", emoji: "🏆" , binyan: "פָּעַל", binyanTr: "pa'al", pastHe: "גמר", pastTr: "gamar", presentHe: "גומר", presentTr: "gomer", futureHe: "יגמור", futureTr: "yigmor" },
+      { he: "לחשוב", tr: "lachshov", pt: "pensar", es: "pensar", en: "to think", it: "pensare", level: "medio", emoji: "🤔" , binyan: "פָּעַל", binyanTr: "pa'al", pastHe: "חשב", pastTr: "chashav", presentHe: "חושב", presentTr: "choshev", futureHe: "יחשוב", futureTr: "yachshov" },
+      { he: "לזכור", tr: "lizkor", pt: "lembrar", es: "recordar", en: "to remember", it: "ricordare", level: "medio", emoji: "🧠" , binyan: "פָּעַל", binyanTr: "pa'al", pastHe: "זכר", pastTr: "zachar", presentHe: "זוכר", presentTr: "zocher", futureHe: "יזכור", futureTr: "yizkor" },
+      { he: "לשכוח", tr: "lishko'ach", pt: "esquecer", es: "olvidar", en: "to forget", it: "dimenticare", level: "medio", emoji: "😶‍🌫️" , binyan: "פָּעַל", binyanTr: "pa'al", pastHe: "שכח", pastTr: "shachach", presentHe: "שוכח", presentTr: "shoche'ach", futureHe: "ישכח", futureTr: "yishkach" },
+      { he: "להבין", tr: "lehavin", pt: "entender", es: "entender", en: "to understand", it: "capire", level: "medio", emoji: "💡" , binyan: "הִפְעִיל", binyanTr: "hif'il", pastHe: "הבין", pastTr: "hevin", presentHe: "מבין", presentTr: "mevin", futureHe: "יבין", futureTr: "yavin" },
+      { he: "לדעת", tr: "lada'at", pt: "saber", es: "saber", en: "to know", it: "sapere", level: "medio", emoji: "🧠" , binyan: "פָּעַל", binyanTr: "pa'al", pastHe: "ידע", pastTr: "yada", presentHe: "יודע", presentTr: "yodea", futureHe: "ידע", futureTr: "yeda" },
+      { he: "לחיות", tr: "lichyot", pt: "viver", es: "vivir", en: "to live", it: "vivere", level: "medio", emoji: "🌱" , binyan: "פָּעַל", binyanTr: "pa'al", pastHe: "חי", pastTr: "chai", presentHe: "חי", presentTr: "chai", futureHe: "יחיה", futureTr: "yichye" },
+      { he: "למות", tr: "lamut", pt: "morrer", es: "morir", en: "to die", it: "morire", level: "forte", emoji: "💀" , binyan: "פָּעַל", binyanTr: "pa'al", pastHe: "מת", pastTr: "met", presentHe: "מת", presentTr: "met", futureHe: "ימות", futureTr: "yamut" },
+      { he: "לבכות", tr: "livkot", pt: "chorar", es: "llorar", en: "to cry", it: "piangere", level: "forte", emoji: "😢" , binyan: "פָּעַל", binyanTr: "pa'al", pastHe: "בכה", pastTr: "bacha", presentHe: "בוכה", presentTr: "bocheh", futureHe: "יבכה", futureTr: "yivke" },
+      { he: "לצחוק", tr: "litschok", pt: "rir", es: "reír", en: "to laugh", it: "ridere", level: "forte", emoji: "😄" , binyan: "פָּעַל", binyanTr: "pa'al", pastHe: "צחק", pastTr: "tsachak", presentHe: "צוחק", presentTr: "tsochek", futureHe: "יצחק", futureTr: "yitschak" },
+      { he: "לעזור", tr: "la'azor", pt: "ajudar", es: "ayudar", en: "to help", it: "aiutare", level: "forte", emoji: "🤝" , binyan: "פָּעַל", binyanTr: "pa'al", pastHe: "עזר", pastTr: "azar", presentHe: "עוזר", presentTr: "ozer", futureHe: "יעזור", futureTr: "ya'azor" },
+      { he: "לשלוח", tr: "lishloach", pt: "enviar", es: "enviar", en: "to send", it: "inviare", level: "forte", emoji: "📤" , binyan: "פָּעַל", binyanTr: "pa'al", pastHe: "שלח", pastTr: "shalach", presentHe: "שולח", presentTr: "sholeach", futureHe: "ישלח", futureTr: "yishlach" },
+      { he: "לקבל", tr: "lekabel", pt: "receber", es: "recibir", en: "to receive", it: "ricevere", level: "forte", emoji: "📥" , binyan: "פִּיעֵל", binyanTr: "piel", pastHe: "קיבל", pastTr: "kibel", presentHe: "מקבל", presentTr: "mekabel", futureHe: "יקבל", futureTr: "yekabel" },
+      { he: "לתת", tr: "latet", pt: "dar", es: "dar", en: "to give", it: "dare", level: "forte", emoji: "🎁" , binyan: "פָּעַל", binyanTr: "pa'al", pastHe: "נתן", pastTr: "natan", presentHe: "נותן", presentTr: "noten", futureHe: "ייתן", futureTr: "yiten" },
+      { he: "לקחת", tr: "lakachat", pt: "pegar", es: "tomar", en: "to take", it: "prendere", level: "forte", emoji: "🤲" , binyan: "פָּעַל", binyanTr: "pa'al", pastHe: "לקח", pastTr: "lakach", presentHe: "לוקח", presentTr: "loke'ach", futureHe: "ייקח", futureTr: "yikach" },
+      { he: "לנסוע", tr: "linso'a", pt: "viajar", es: "viajar", en: "to travel", it: "viaggiare", level: "forte", emoji: "✈️" , binyan: "פָּעַל", binyanTr: "pa'al", pastHe: "נסע", pastTr: "nasa", presentHe: "נוסע", presentTr: "nose'a", futureHe: "ייסע", futureTr: "yisa" },
+      { he: "לטוס", tr: "latus", pt: "voar", es: "volar", en: "to fly", it: "volare", level: "forte", emoji: "🕊️" , binyan: "פָּעַל", binyanTr: "pa'al", pastHe: "טס", pastTr: "tas", presentHe: "טס", presentTr: "tas", futureHe: "יטוס", futureTr: "yatus" },
+      { he: "לשחות", tr: "lisechot", pt: "nadar", es: "nadar", en: "to swim", it: "nuotare", level: "forte", emoji: "🏊" , binyan: "פָּעַל", binyanTr: "pa'al", pastHe: "שחה", pastTr: "sacha", presentHe: "שוחה", presentTr: "soche", futureHe: "ישחה", futureTr: "yische" },
+      { he: "לצלם", tr: "letsalem", pt: "fotografar", es: "fotografiar", en: "to photograph", it: "fotografare", level: "forte", emoji: "📸" , binyan: "פִּיעֵל", binyanTr: "piel", pastHe: "צילם", pastTr: "tsilem", presentHe: "מצלם", presentTr: "metsalem", futureHe: "יצלם", futureTr: "yetsalem" },
+      { he: "להתלבש", tr: "lehitlabesh", pt: "vestir-se", es: "vestirse", en: "to get dressed", it: "vestirsi", level: "forte", emoji: "👕" , binyan: "הִתְפַּעֵל", binyanTr: "hitpa'el", pastHe: "התלבש", pastTr: "hitlabesh", presentHe: "מתלבש", presentTr: "mitlabesh", futureHe: "יתלבש", futureTr: "yitlabesh" },
+      { he: "להתקלח", tr: "lehitkalach", pt: "tomar banho", es: "ducharse", en: "to shower", it: "fare la doccia", level: "forte", emoji: "🚿" , binyan: "הִתְפַּעֵל", binyanTr: "hitpa'el", pastHe: "התקלח", pastTr: "hitkalach", presentHe: "מתקלח", presentTr: "mitkalech", futureHe: "יתקלח", futureTr: "yitkalach" },
+      { he: "לחכות", tr: "lechakot", pt: "esperar", es: "esperar", en: "to wait", it: "aspettare", level: "forte", emoji: "⏳" , binyan: "פִּיעֵל", binyanTr: "piel", pastHe: "חיכה", pastTr: "chika", presentHe: "מחכה", presentTr: "mechake", futureHe: "יחכה", futureTr: "yechake" },
+      { he: "לבוא", tr: "lavo", pt: "vir", es: "venir", en: "to come", it: "venire", level: "forte", emoji: "👋" , binyan: "פָּעַל", binyanTr: "pa'al", pastHe: "בא", pastTr: "ba", presentHe: "בא", presentTr: "ba", futureHe: "יבוא", futureTr: "yavo" },
+    ],
+  },
+  {
+    id: "roupas",
+    name: "Roupas",
+    icon: "👕",
+    nameLoc: { pt: "Roupas", en: "Clothes", es: "Ropa", it: "Vestiti" },
+    glyph: "ח",
+    nameHe: "בגדים",
+    accent: "#B8863B",
+    words: [
+      { he: "חולצה", tr: "chultsa", pt: "camisa", es: "camisa", en: "shirt", it: "camicia", level: "basico", emoji: "👔" },
+      { he: "מכנסיים", tr: "michnasayim", pt: "calça", es: "pantalón", en: "pants", it: "pantaloni", level: "basico", emoji: "👖" },
+      { he: "שמלה", tr: "simla", pt: "vestido", es: "vestido", en: "dress", it: "vestito", level: "basico", emoji: "👗" },
+      { he: "נעליים", tr: "na'alayim", pt: "sapatos", es: "zapatos", en: "shoes", it: "scarpe", level: "basico", emoji: "👟" },
+      { he: "כובע", tr: "kova", pt: "chapéu", es: "sombrero", en: "hat", it: "cappello", level: "basico", emoji: "🎩" },
+      { he: "מעיל", tr: "me'il", pt: "casaco", es: "abrigo", en: "coat", it: "cappotto", level: "basico", emoji: "🧥" },
+      { he: "גרביים", tr: "garbayim", pt: "meias", es: "calcetines", en: "socks", it: "calzini", level: "basico", emoji: "🧦" },
+      { he: "חצאית", tr: "chatsa'it", pt: "saia", es: "falda", en: "skirt", it: "gonna", level: "basico", emoji: "🩱" },
+      { he: "חגורה", tr: "chagora", pt: "cinto", es: "cinturón", en: "belt", it: "cintura", level: "basico", emoji: "👖" },
+      { he: "עניבה", tr: "aniva", pt: "gravata", es: "corbata", en: "tie", it: "cravatta", level: "basico", emoji: "👔" },
+      { he: "פיג'מה", tr: "pijama", pt: "pijama", es: "pijama", en: "pajamas", it: "pigiama", level: "basico", emoji: "🩳" },
+      { he: "בגד ים", tr: "beged yam", pt: "maiô", es: "traje de baño", en: "swimsuit", it: "costume da bagno", level: "basico", emoji: "👕" },
+      { he: "כפפות", tr: "kfafot", pt: "luvas", es: "guantes", en: "gloves", it: "guanti", level: "basico", emoji: "🎽" },
+      { he: "משקפיים", tr: "mishkafayim", pt: "óculos", es: "gafas", en: "glasses", it: "occhiali", level: "basico", emoji: "👖" },
+      { he: "תיק", tr: "tik", pt: "bolsa", es: "bolso", en: "bag", it: "borsa", level: "basico", emoji: "🎀" },
+      { he: "מכנסיים קצרים", tr: "michnasayim ktsarim", pt: "bermuda", es: "pantalón corto", en: "shorts", it: "pantaloncini", level: "basico", emoji: "🧣" },
+      { he: "חולצת טי", tr: "chultsat ti", pt: "camiseta", es: "camiseta", en: "t-shirt", it: "maglietta", level: "basico", emoji: "💪" },
+      { he: "סוודר", tr: "sveder", pt: "suéter", es: "suéter", en: "sweater", it: "maglione", level: "medio", emoji: "🔘" },
+      { he: "ג'ינס", tr: "jins", pt: "jeans", es: "jeans", en: "jeans", it: "jeans", level: "medio", emoji: "🤐" },
+      { he: "עניבת פרפר", tr: "anivat parpar", pt: "gravata-borboleta", es: "pajarita", en: "bow tie", it: "papillon", level: "medio", emoji: "🩲" },
+      { he: "צעיף", tr: "tsa'if", pt: "cachecol", es: "bufanda", en: "scarf", it: "sciarpa", level: "medio", emoji: "👙" },
+      { he: "שרוול", tr: "sharvul", pt: "manga", es: "manga", en: "sleeve", it: "manica", level: "medio", emoji: "👘" },
+      { he: "כפתור", tr: "kaftor", pt: "botão", es: "botón", en: "button", it: "bottone", level: "medio", emoji: "🥿" },
+      { he: "רוכסן", tr: "rochsan", pt: "zíper", es: "cremallera", en: "zipper", it: "cerniera", level: "medio", emoji: "👢" },
+      { he: "תחתונים", tr: "tachtonim", pt: "roupa íntima", es: "ropa interior", en: "underwear", it: "biancheria intima", level: "medio", emoji: "🩴" },
+      { he: "חזייה", tr: "chaziya", pt: "sutiã", es: "sostén", en: "bra", it: "reggiseno", level: "medio", emoji: "🧥" },
+      { he: "כתונת לילה", tr: "ktonet layla", pt: "camisola", es: "camisón", en: "nightgown", it: "camicia da notte", level: "medio", emoji: "🧥" },
+      { he: "חלוק", tr: "chaluk", pt: "roupão", es: "bata", en: "robe", it: "vestaglia", level: "medio", emoji: "🤵" },
+      { he: "סנדלים", tr: "sandalim", pt: "sandálias", es: "sandalias", en: "sandals", it: "sandali", level: "medio", emoji: "🧢" },
+      { he: "מגפיים", tr: "magafayim", pt: "botas", es: "botas", en: "boots", it: "stivali", level: "medio", emoji: "👔" },
+      { he: "כפכפים", tr: "kafkafim", pt: "chinelos", es: "chanclas", en: "flip-flops", it: "infradito", level: "medio", emoji: "🩳" },
+      { he: "אפודה", tr: "apuda", pt: "moletom com capuz", es: "sudadera con capucha", en: "hoodie", it: "felpa con cappuccio", level: "medio", emoji: "🕶️" },
+      { he: "ז'קט", tr: "jaket", pt: "jaqueta", es: "chaqueta", en: "jacket", it: "giacca", level: "medio", emoji: "⌚" },
+      { he: "חליפה", tr: "chalifa", pt: "terno", es: "traje", en: "suit", it: "abito da uomo", level: "medio", emoji: "💍" },
+      { he: "כובע גרב", tr: "kova gerev", pt: "gorro", es: "gorro", en: "beanie", it: "berretto", level: "forte", emoji: "📿" },
+      { he: "צווארון", tr: "tsavaron", pt: "colarinho", es: "cuello", en: "collar", it: "colletto", level: "forte", emoji: "💎" },
+      { he: "מכנס טרנינג", tr: "michnas trening", pt: "calça de moletom", es: "pantalón deportivo", en: "sweatpants", it: "pantaloni della tuta", level: "forte", emoji: "💍" },
+      { he: "משקפי שמש", tr: "mishkafey shemesh", pt: "óculos de sol", es: "gafas de sol", en: "sunglasses", it: "occhiali da sole", level: "forte", emoji: "🥽" },
+      { he: "שעון יד", tr: "sha'on yad", pt: "relógio de pulso", es: "reloj de pulsera", en: "wristwatch", it: "orologio da polso", level: "forte", emoji: "🎽" },
+      { he: "טבעת", tr: "taba'at", pt: "anel", es: "anillo", en: "ring", it: "anello", level: "forte", emoji: "🥼" },
+      { he: "שרשרת", tr: "sharsheret", pt: "colar", es: "collar", en: "necklace", it: "collana", level: "forte", emoji: "👔" },
+      { he: "עגיל", tr: "agil", pt: "brinco", es: "pendiente", en: "earring", it: "orecchino", level: "forte", emoji: "🧵" },
+      { he: "צמיד", tr: "tsamid", pt: "pulseira", es: "pulsera", en: "bracelet", it: "braccialetto", level: "forte", emoji: "🎩" },
+      { he: "סינר", tr: "sinar", pt: "avental", es: "delantal", en: "apron", it: "grembiule", level: "forte", emoji: "🧢" },
+      { he: "מטפחת", tr: "mitpachat", pt: "lenço", es: "pañuelo", en: "headscarf", it: "fazzoletto", level: "forte", emoji: "👨‍🎓" },
+      { he: "גופייה", tr: "gufiya", pt: "camiseta regata", es: "camiseta interior", en: "undershirt", it: "canottiera", level: "forte", emoji: "🧥" },
+      { he: "בגד גוף", tr: "beged guf", pt: "body", es: "body", en: "bodysuit", it: "body", level: "forte", emoji: "🩱" },
+      { he: "מדים", tr: "madim", pt: "uniforme", es: "uniforme", en: "uniform", it: "uniforme", level: "forte", emoji: "👘" },
+      { he: "סרבל", tr: "sarbal", pt: "macacão", es: "mono", en: "overalls", it: "tuta da lavoro", level: "forte", emoji: "🧵" },
+      { he: "רדיד", tr: "radid", pt: "xale", es: "chal", en: "shawl", it: "scialle", level: "forte", emoji: "🧣" },
+    ],
+  },
+  {
+    id: "moveis",
+    name: "Móveis",
+    icon: "🛋️",
+    nameLoc: { pt: "Móveis", en: "Furniture", es: "Muebles", it: "Mobili" },
+    glyph: "ש",
+    nameHe: "רהיטים",
+    accent: "#5C3A21",
+    words: [
+      { he: "שולחן", tr: "shulchan", pt: "mesa", es: "mesa", en: "table", it: "tavolo", level: "basico", emoji: "🪑" },
+      { he: "כיסא", tr: "kise", pt: "cadeira", es: "silla", en: "chair", it: "sedia", level: "basico", emoji: "🪑" },
+      { he: "מיטה", tr: "mita", pt: "cama", es: "cama", en: "bed", it: "letto", level: "basico", emoji: "🛏️" },
+      { he: "ספה", tr: "sapa", pt: "sofá", es: "sofá", en: "couch", it: "divano", level: "basico", emoji: "🛋️" },
+      { he: "ארון", tr: "aron", pt: "armário", es: "armario", en: "wardrobe", it: "armadio", level: "basico", emoji: "🚪" },
+      { he: "מדף", tr: "madaf", pt: "prateleira", es: "estante", en: "shelf", it: "mensola", level: "basico", emoji: "📚" },
+      { he: "מראה", tr: "mar'a", pt: "espelho", es: "espejo", en: "mirror", it: "specchio", level: "basico", emoji: "🪞" },
+      { he: "מנורה", tr: "menora", pt: "abajur", es: "lámpara", en: "lamp", it: "lampada", level: "basico", emoji: "💡" },
+      { he: "שטיח", tr: "shatiach", pt: "tapete", es: "alfombra", en: "rug", it: "tappeto", level: "basico", emoji: "🟫" },
+      { he: "תנור", tr: "tanur", pt: "forno", es: "horno", en: "oven", it: "forno", level: "basico", emoji: "🍞" },
+      { he: "אמבטיה", tr: "ambatya", pt: "banheira", es: "bañera", en: "bathtub", it: "vasca da bagno", level: "basico", emoji: "🛁" },
+      { he: "כיור", tr: "kiyor", pt: "pia", es: "lavabo", en: "sink", it: "lavandino", level: "basico", emoji: "🚰" },
+      { he: "מקרר", tr: "mekarer", pt: "geladeira", es: "refrigerador", en: "refrigerator", it: "frigorifero", level: "basico", emoji: "🧊" },
+      { he: "מכונת כביסה", tr: "mechonat kvisa", pt: "máquina de lavar", es: "lavadora", en: "washing machine", it: "lavatrice", level: "basico", emoji: "🧺" },
+      { he: "שידה", tr: "shida", pt: "cômoda", es: "cómoda", en: "dresser", it: "cassettiera", level: "basico", emoji: "🗄️" },
+      { he: "כרית", tr: "karit", pt: "travesseiro", es: "almohada", en: "pillow", it: "cuscino", level: "basico", emoji: "🛏️" },
+      { he: "שמיכה", tr: "smicha", pt: "cobertor", es: "manta", en: "blanket", it: "coperta", level: "basico", emoji: "🧣" },
+      { he: "וילון", tr: "vilon", pt: "cortina", es: "cortina", en: "curtain", it: "tenda", level: "medio", emoji: "🪟" },
+      { he: "שולחן קפה", tr: "shulchan kafe", pt: "mesa de centro", es: "mesa de centro", en: "coffee table", it: "tavolino da caffè", level: "medio", emoji: "☕" },
+      { he: "כורסה", tr: "kursa", pt: "poltrona", es: "sillón", en: "armchair", it: "poltrona", level: "medio", emoji: "🛋️" },
+      { he: "ארון ספרים", tr: "aron sfarim", pt: "estante de livros", es: "librero", en: "bookcase", it: "libreria", level: "medio", emoji: "📚" },
+      { he: "שולחן כתיבה", tr: "shulchan ktiva", pt: "escrivaninha", es: "escritorio", en: "desk", it: "scrivania", level: "medio", emoji: "🖥️" },
+      { he: "מיקרוגל", tr: "mikrogal", pt: "micro-ondas", es: "microondas", en: "microwave", it: "microonde", level: "medio", emoji: "📡" },
+      { he: "כיריים", tr: "kirayim", pt: "fogão", es: "estufa", en: "stovetop", it: "fornello", level: "medio", emoji: "🔥" },
+      { he: "מדיח כלים", tr: "meadiach kelim", pt: "lava-louças", es: "lavavajillas", en: "dishwasher", it: "lavastoviglie", level: "medio", emoji: "🍽️" },
+      { he: "ברז", tr: "berez", pt: "torneira", es: "grifo", en: "faucet", it: "rubinetto", level: "medio", emoji: "🚰" },
+      { he: "אסלה", tr: "asla", pt: "vaso sanitário", es: "inodoro", en: "toilet", it: "water", level: "medio", emoji: "🚽" },
+      { he: "מקלחת", tr: "miklachat", pt: "chuveiro", es: "ducha", en: "shower", it: "doccia", level: "medio", emoji: "🚿" },
+      { he: "מגבת", tr: "magevet", pt: "toalha", es: "toalla", en: "towel", it: "asciugamano", level: "medio", emoji: "🧻" },
+      { he: "שעון קיר", tr: "sha'on kir", pt: "relógio de parede", es: "reloj de pared", en: "wall clock", it: "orologio da parete", level: "medio", emoji: "🕰️" },
+      { he: "שרפרף", tr: "shrafraf", pt: "banquinho", es: "taburete", en: "stool", it: "sgabello", level: "medio", emoji: "🪑" },
+      { he: "ספסל", tr: "safsal", pt: "banco", es: "banco", en: "bench", it: "panca", level: "medio", emoji: "🪑" },
+      { he: "ארגז", tr: "argaz", pt: "baú", es: "caja", en: "chest", it: "baule", level: "medio", emoji: "📦" },
+      { he: "מנורת שולחן", tr: "menorat shulchan", pt: "abajur de mesa", es: "lámpara de mesa", en: "table lamp", it: "lampada da tavolo", level: "medio", emoji: "💡" },
+      { he: "עריסה", tr: "arisa", pt: "berço", es: "cuna", en: "crib", it: "culla", level: "forte", emoji: "👶" },
+      { he: "כיסא נדנדה", tr: "kise nadneda", pt: "cadeira de balanço", es: "mecedora", en: "rocking chair", it: "sedia a dondolo", level: "forte", emoji: "🪑" },
+      { he: "מזנון", tr: "miznon", pt: "aparador", es: "aparador", en: "sideboard", it: "credenza", level: "forte", emoji: "🍽️" },
+      { he: "ויטרינה", tr: "vitrina", pt: "vitrine", es: "vitrina", en: "display cabinet", it: "vetrina", level: "forte", emoji: "🖼️" },
+      { he: "כרית נוי", tr: "karit noi", pt: "almofada decorativa", es: "cojín decorativo", en: "cushion", it: "cuscino decorativo", level: "forte", emoji: "🛋️" },
+      { he: "מתלה", tr: "matleh", pt: "cabide", es: "percha", en: "coat rack", it: "attaccapanni", level: "forte", emoji: "🧥" },
+      { he: "מזרון", tr: "mizron", pt: "colchão", es: "colchón", en: "mattress", it: "materasso", level: "forte", emoji: "🛏️" },
+      { he: "שולחן אוכל", tr: "shulchan ochel", pt: "mesa de jantar", es: "mesa de comedor", en: "dining table", it: "tavolo da pranzo", level: "forte", emoji: "🍽️" },
+      { he: "טלוויזיה", tr: "televizia", pt: "televisão", es: "televisión", en: "television", it: "televisione", level: "forte", emoji: "📺" },
+      { he: "רמקול", tr: "ramkol", pt: "alto-falante", es: "altavoz", en: "speaker", it: "altoparlante", level: "forte", emoji: "🔊" },
+      { he: "מזגן", tr: "mazgan", pt: "ar-condicionado", es: "aire acondicionado", en: "air conditioner", it: "condizionatore", level: "forte", emoji: "❄️" },
+      { he: "שואב אבק", tr: "sho'ev avak", pt: "aspirador de pó", es: "aspiradora", en: "vacuum cleaner", it: "aspirapolvere", level: "forte", emoji: "🧹" },
+      { he: "טוסטר", tr: "toster", pt: "torradeira", es: "tostadora", en: "toaster", it: "tostapane", level: "forte", emoji: "🍞" },
+      { he: "קומקום", tr: "kumkum", pt: "chaleira", es: "tetera", en: "kettle", it: "bollitore", level: "forte", emoji: "☕" },
+      { he: "מחבת", tr: "machavat", pt: "frigideira", es: "sartén", en: "frying pan", it: "padella", level: "forte", emoji: "🍳" },
+      { he: "סיר", tr: "sir", pt: "panela", es: "olla", en: "pot", it: "pentola", level: "forte", emoji: "🍲" },
+    ],
+  },
+  {
+    id: "animais",
+    name: "Animais",
+    icon: "🐾",
+    nameLoc: { pt: "Animais", en: "Animals", es: "Animales", it: "Animali" },
+    glyph: "כ",
+    nameHe: "חיות",
+    accent: "#2F5233",
+    words: [
+      { he: "כלב", tr: "kelev", pt: "cachorro", es: "perro", en: "dog", it: "cane", level: "basico", emoji: "🐶" },
+      { he: "חתול", tr: "chatul", pt: "gato", es: "gato", en: "cat", it: "gatto", level: "basico", emoji: "🐱" },
+      { he: "ציפור", tr: "tsipor", pt: "pássaro", es: "pájaro", en: "bird", it: "uccello", level: "basico", emoji: "🐦" },
+      { he: "דג", tr: "dag", pt: "peixe", es: "pez", en: "fish", it: "pesce", level: "basico", emoji: "🐟" },
+      { he: "סוס", tr: "sus", pt: "cavalo", es: "caballo", en: "horse", it: "cavallo", level: "basico", emoji: "🐴" },
+      { he: "פרה", tr: "para", pt: "vaca", es: "vaca", en: "cow", it: "mucca", level: "basico", emoji: "🐄" },
+      { he: "אריה", tr: "aryeh", pt: "leão", es: "león", en: "lion", it: "leone", level: "basico", emoji: "🦁" },
+      { he: "דוב", tr: "dov", pt: "urso", es: "oso", en: "bear", it: "orso", level: "basico", emoji: "🐻" },
+      { he: "פיל", tr: "pil", pt: "elefante", es: "elefante", en: "elephant", it: "elefante", level: "basico", emoji: "🐘" },
+      { he: "נמר", tr: "namer", pt: "leopardo", es: "leopardo", en: "leopard", it: "leopardo", level: "basico", emoji: "🐆" },
+      { he: "ארנב", tr: "arnav", pt: "coelho", es: "conejo", en: "rabbit", it: "coniglio", level: "basico", emoji: "🐰" },
+      { he: "עכבר", tr: "achbar", pt: "rato", es: "ratón", en: "mouse", it: "topo", level: "basico", emoji: "🐭" },
+      { he: "נחש", tr: "nachash", pt: "cobra", es: "serpiente", en: "snake", it: "serpente", level: "basico", emoji: "🐍" },
+      { he: "קוף", tr: "kof", pt: "macaco", es: "mono", en: "monkey", it: "scimmia", level: "basico", emoji: "🐒" },
+      { he: "כבשה", tr: "kivsa", pt: "ovelha", es: "oveja", en: "sheep", it: "pecora", level: "basico", emoji: "🐑" },
+      { he: "תרנגול", tr: "tarnegol", pt: "galo", es: "gallo", en: "rooster", it: "gallo", level: "basico", emoji: "🐓" },
+      { he: "תרנגולת", tr: "tarnegolet", pt: "galinha", es: "gallina", en: "hen", it: "gallina", level: "basico", emoji: "🐔" },
+      { he: "ברווז", tr: "barvaz", pt: "pato", es: "pato", en: "duck", it: "anatra", level: "medio", emoji: "🦆" },
+      { he: "אווז", tr: "avaz", pt: "ganso", es: "ganso", en: "goose", it: "oca", level: "medio", emoji: "🦢" },
+      { he: "עז", tr: "ez", pt: "cabra", es: "cabra", en: "goat", it: "capra", level: "medio", emoji: "🐐" },
+      { he: "חזיר", tr: "chazir", pt: "porco", es: "cerdo", en: "pig", it: "maiale", level: "medio", emoji: "🐷" },
+      { he: "צב", tr: "tsav", pt: "tartaruga", es: "tortuga", en: "turtle", it: "tartaruga", level: "medio", emoji: "🐢" },
+      { he: "צפרדע", tr: "tsfardea", pt: "sapo", es: "rana", en: "frog", it: "rana", level: "medio", emoji: "🐸" },
+      { he: "דבורה", tr: "dvora", pt: "abelha", es: "abeja", en: "bee", it: "ape", level: "medio", emoji: "🐝" },
+      { he: "פרפר", tr: "parpar", pt: "borboleta", es: "mariposa", en: "butterfly", it: "farfalla", level: "medio", emoji: "🦋" },
+      { he: "נמלה", tr: "nemala", pt: "formiga", es: "hormiga", en: "ant", it: "formica", level: "medio", emoji: "🐜" },
+      { he: "עכביש", tr: "akavish", pt: "aranha", es: "araña", en: "spider", it: "ragno", level: "medio", emoji: "🕷️" },
+      { he: "זבוב", tr: "zvuv", pt: "mosca", es: "mosca", en: "fly", it: "mosca", level: "medio", emoji: "🪰" },
+      { he: "יתוש", tr: "yatush", pt: "mosquito", es: "mosquito", en: "mosquito", it: "zanzara", level: "medio", emoji: "🦟" },
+      { he: "כריש", tr: "karish", pt: "tubarão", es: "tiburón", en: "shark", it: "squalo", level: "medio", emoji: "🦈" },
+      { he: "לווייתן", tr: "livyatan", pt: "baleia", es: "ballena", en: "whale", it: "balena", level: "medio", emoji: "🐋" },
+      { he: "דולפין", tr: "dolfin", pt: "golfinho", es: "delfín", en: "dolphin", it: "delfino", level: "medio", emoji: "🐬" },
+      { he: "תמנון", tr: "tamnun", pt: "polvo", es: "pulpo", en: "octopus", it: "polpo", level: "medio", emoji: "🐙" },
+      { he: "סרטן", tr: "sartan", pt: "caranguejo", es: "cangrejo", en: "crab", it: "granchio", level: "medio", emoji: "🦀" },
+      { he: "זברה", tr: "zebra", pt: "zebra", es: "cebra", en: "zebra", it: "zebra", level: "forte", emoji: "🦓" },
+      { he: "ג'ירפה", tr: "jirafa", pt: "girafa", es: "jirafa", en: "giraffe", it: "giraffa", level: "forte", emoji: "🦒" },
+      { he: "קנגורו", tr: "kangaru", pt: "canguru", es: "canguro", en: "kangaroo", it: "canguro", level: "forte", emoji: "🦘" },
+      { he: "פנדה", tr: "panda", pt: "panda", es: "panda", en: "panda", it: "panda", level: "forte", emoji: "🐼" },
+      { he: "זאב", tr: "ze'ev", pt: "lobo", es: "lobo", en: "wolf", it: "lupo", level: "forte", emoji: "🐺" },
+      { he: "שועל", tr: "shu'al", pt: "raposa", es: "zorro", en: "fox", it: "volpe", level: "forte", emoji: "🦊" },
+      { he: "קיפוד", tr: "kipod", pt: "ouriço", es: "erizo", en: "hedgehog", it: "riccio", level: "forte", emoji: "🦔" },
+      { he: "סנאי", tr: "snai", pt: "esquilo", es: "ardilla", en: "squirrel", it: "scoiattolo", level: "forte", emoji: "🐿️" },
+      { he: "עטלף", tr: "atalef", pt: "morcego", es: "murciélago", en: "bat", it: "pipistrello", level: "forte", emoji: "🦇" },
+      { he: "ינשוף", tr: "yanshuf", pt: "coruja", es: "búho", en: "owl", it: "gufo", level: "forte", emoji: "🦉" },
+      { he: "נשר", tr: "nesher", pt: "águia", es: "águila", en: "eagle", it: "aquila", level: "forte", emoji: "🦅" },
+      { he: "תוכי", tr: "tuki", pt: "papagaio", es: "loro", en: "parrot", it: "pappagallo", level: "forte", emoji: "🦜" },
+      { he: "חמור", tr: "chamor", pt: "burro", es: "burro", en: "donkey", it: "asino", level: "forte", emoji: "🫏" },
+      { he: "גמל", tr: "gamal", pt: "camelo", es: "camello", en: "camel", it: "cammello", level: "forte", emoji: "🐫" },
+      { he: "דג זהב", tr: "dag zahav", pt: "peixinho dourado", es: "pez dorado", en: "goldfish", it: "pesce rosso", level: "forte", emoji: "🐠" },
+      { he: "תן", tr: "tan", pt: "chacal", es: "chacal", en: "jackal", it: "sciacallo", level: "forte", emoji: "🐺" },
+    ],
+  },
+  {
+    id: "cores",
+    name: "Cores",
+    icon: "🎨",
+    nameLoc: { pt: "Cores", en: "Colors", es: "Colores", it: "Colori" },
+    glyph: "צ",
+    nameHe: "צבעים",
+    accent: "#8B2F5E",
+    words: [
+      { he: "אדום", tr: "adom", pt: "vermelho", es: "rojo", en: "red", it: "rosso", level: "basico", emoji: "🔴" },
+      { he: "כחול", tr: "kachol", pt: "azul", es: "azul", en: "blue", it: "blu", level: "basico", emoji: "🔵" },
+      { he: "ירוק", tr: "yarok", pt: "verde", es: "verde", en: "green", it: "verde", level: "basico", emoji: "🟢" },
+      { he: "צהוב", tr: "tsahov", pt: "amarelo", es: "amarillo", en: "yellow", it: "giallo", level: "basico", emoji: "🟡" },
+      { he: "שחור", tr: "shachor", pt: "preto", es: "negro", en: "black", it: "nero", level: "basico", emoji: "⚫" },
+      { he: "לבן", tr: "lavan", pt: "branco", es: "blanco", en: "white", it: "bianco", level: "basico", emoji: "⚪" },
+      { he: "כתום", tr: "katom", pt: "laranja", es: "naranja", en: "orange", it: "arancione", level: "basico", emoji: "🟠" },
+      { he: "ורוד", tr: "varod", pt: "rosa", es: "rosa", en: "pink", it: "rosa", level: "basico", emoji: "🩷" },
+      { he: "סגול", tr: "sagol", pt: "roxo", es: "morado", en: "purple", it: "viola", level: "basico", emoji: "🟣" },
+      { he: "חום", tr: "chum", pt: "marrom", es: "marrón", en: "brown", it: "marrone", level: "basico", emoji: "🟤" },
+      { he: "אפור", tr: "afor", pt: "cinza", es: "gris", en: "gray", it: "grigio", level: "basico", emoji: "⚪" },
+      { he: "זהוב", tr: "zahov", pt: "dourado", es: "dorado", en: "golden", it: "dorato", level: "basico", emoji: "🟡" },
+      { he: "תכלת", tr: "tchelet", pt: "azul-claro", es: "celeste", en: "light blue", it: "azzurro", level: "basico", emoji: "🩵" },
+      { he: "כחול כהה", tr: "kachol keihe", pt: "azul escuro", es: "azul oscuro", en: "dark blue", it: "blu scuro", level: "basico", emoji: "🔵" },
+      { he: "ירוק כהה", tr: "yarok keihe", pt: "verde escuro", es: "verde oscuro", en: "dark green", it: "verde scuro", level: "basico", emoji: "🟢" },
+      { he: "ירוק בהיר", tr: "yarok bahir", pt: "verde claro", es: "verde claro", en: "light green", it: "verde chiaro", level: "basico", emoji: "🟢" },
+      { he: "אדום כהה", tr: "adom keihe", pt: "vermelho escuro", es: "rojo oscuro", en: "dark red", it: "rosso scuro", level: "basico", emoji: "🔴" },
+      { he: "ורוד בהיר", tr: "varod bahir", pt: "rosa claro", es: "rosa claro", en: "light pink", it: "rosa chiaro", level: "medio", emoji: "🩷" },
+      { he: "כסף", tr: "kesef", pt: "prateado", es: "plateado", en: "silver", it: "argento", level: "medio", emoji: "⚪" },
+      { he: "ברונזה", tr: "bronza", pt: "bronze", es: "bronce", en: "bronze", it: "bronzo", level: "medio", emoji: "🟤" },
+      { he: "בז'", tr: "bez", pt: "bege", es: "beige", en: "beige", it: "beige", level: "medio", emoji: "🟤" },
+      { he: "טורקיז", tr: "turkiz", pt: "turquesa", es: "turquesa", en: "turquoise", it: "turchese", level: "medio", emoji: "🩵" },
+      { he: "לילך", tr: "lilach", pt: "lilás", es: "lila", en: "lilac", it: "lilla", level: "medio", emoji: "🟣" },
+      { he: "מנטה", tr: "menta", pt: "verde-menta", es: "verde menta", en: "mint green", it: "verde menta", level: "medio", emoji: "🟢" },
+      { he: "חרדל", tr: "chardal", pt: "mostarda", es: "mostaza", en: "mustard", it: "senape", level: "medio", emoji: "🟡" },
+      { he: "בורדו", tr: "bordo", pt: "bordô", es: "burdeos", en: "burgundy", it: "bordeaux", level: "medio", emoji: "🍷" },
+      { he: "קורל", tr: "koral", pt: "coral", es: "coral", en: "coral", it: "corallo", level: "medio", emoji: "🪸" },
+      { he: "זית", tr: "zayit", pt: "verde-oliva", es: "verde oliva", en: "olive green", it: "verde oliva", level: "medio", emoji: "🫒" },
+      { he: "שנהב", tr: "shenhav", pt: "marfim", es: "marfil", en: "ivory", it: "avorio", level: "medio", emoji: "🤍" },
+      { he: "שמנת", tr: "shamenet", pt: "creme", es: "crema", en: "cream", it: "crema", level: "medio", emoji: "🟤" },
+      { he: "חום כהה", tr: "chum keihe", pt: "marrom escuro", es: "marrón oscuro", en: "dark brown", it: "marrone scuro", level: "medio", emoji: "🟤" },
+      { he: "חום בהיר", tr: "chum bahir", pt: "marrom claro", es: "marrón claro", en: "light brown", it: "marrone chiaro", level: "medio", emoji: "🟤" },
+      { he: "אפור כהה", tr: "afor keihe", pt: "cinza escuro", es: "gris oscuro", en: "dark gray", it: "grigio scuro", level: "medio", emoji: "⚫" },
+      { he: "אפור בהיר", tr: "afor bahir", pt: "cinza claro", es: "gris claro", en: "light gray", it: "grigio chiaro", level: "medio", emoji: "⚪" },
+      { he: "כתום כהה", tr: "katom keihe", pt: "laranja escuro", es: "naranja oscuro", en: "dark orange", it: "arancione scuro", level: "forte", emoji: "🟠" },
+      { he: "אינדיגו", tr: "indigo", pt: "índigo", es: "índigo", en: "indigo", it: "indaco", level: "forte", emoji: "🟣" },
+      { he: "מג'נטה", tr: "magenta", pt: "magenta", es: "magenta", en: "magenta", it: "magenta", level: "forte", emoji: "🟣" },
+      { he: "פוקסיה", tr: "fuksia", pt: "pink-choque", es: "fucsia", en: "fuchsia", it: "fucsia", level: "forte", emoji: "🩷" },
+      { he: "אדמדם", tr: "adamdam", pt: "avermelhado", es: "rojizo", en: "reddish", it: "rossastro", level: "forte", emoji: "🔴" },
+      { he: "ירקרק", tr: "yerakrak", pt: "esverdeado", es: "verdoso", en: "greenish", it: "verdastro", level: "forte", emoji: "🟢" },
+      { he: "כחלחל", tr: "kechalchal", pt: "azulado", es: "azulado", en: "bluish", it: "azzurrognolo", level: "forte", emoji: "🔵" },
+      { he: "שקוף", tr: "shakuf", pt: "transparente", es: "transparente", en: "transparent", it: "trasparente", level: "forte", emoji: "⬜" },
+      { he: "זהב ורד", tr: "zahav vered", pt: "ouro rosé", es: "oro rosa", en: "rose gold", it: "oro rosa", level: "forte", emoji: "🌸" },
+      { he: "חאקי", tr: "chaki", pt: "cáqui", es: "caqui", en: "khaki", it: "kaki", level: "forte", emoji: "🟤" },
+      { he: "פחם", tr: "pecham", pt: "cor de carvão", es: "color carbón", en: "charcoal", it: "color carbone", level: "forte", emoji: "⚫" },
+      { he: "ורדרד", tr: "vardrad", pt: "rosado", es: "rosado", en: "rosy", it: "rosato", level: "forte", emoji: "🌸" },
+      { he: "פלטינה", tr: "platina", pt: "platina", es: "platino", en: "platinum", it: "platino", level: "forte", emoji: "⚪" },
+      { he: "כחול ים", tr: "kachol yam", pt: "azul-marinho", es: "azul marino", en: "navy blue", it: "blu navy", level: "forte", emoji: "🔵" },
+      { he: "סגול כהה", tr: "sagol keihe", pt: "roxo escuro", es: "morado oscuro", en: "dark purple", it: "viola scuro", level: "forte", emoji: "🟣" },
+      { he: "צהוב לימון", tr: "tsahov limon", pt: "amarelo-limão", es: "amarillo limón", en: "lemon yellow", it: "giallo limone", level: "forte", emoji: "🍋" },
+    ],
+  },
+  {
+    id: "familia",
+    name: "Família",
+    icon: "👪",
+    nameLoc: { pt: "Família", en: "Family", es: "Familia", it: "Famiglia" },
+    glyph: "א",
+    nameHe: "משפחה",
+    accent: "#6B4226",
+    words: [
+      { he: "אמא", tr: "ima", pt: "mãe", es: "mamá", en: "mother", it: "mamma", level: "basico", emoji: "👩" },
+      { he: "אבא", tr: "aba", pt: "pai", es: "papá", en: "father", it: "papà", level: "basico", emoji: "👨" },
+      { he: "אח", tr: "ach", pt: "irmão", es: "hermano", en: "brother", it: "fratello", level: "basico", emoji: "👦" },
+      { he: "אחות", tr: "achot", pt: "irmã", es: "hermana", en: "sister", it: "sorella", level: "basico", emoji: "👧" },
+      { he: "סבא", tr: "saba", pt: "avô", es: "abuelo", en: "grandfather", it: "nonno", level: "basico", emoji: "👴" },
+      { he: "סבתא", tr: "savta", pt: "avó", es: "abuela", en: "grandmother", it: "nonna", level: "basico", emoji: "👵" },
+      { he: "בן", tr: "ben", pt: "filho", es: "hijo", en: "son", it: "figlio", level: "basico", emoji: "👦" },
+      { he: "בת", tr: "bat", pt: "filha", es: "hija", en: "daughter", it: "figlia", level: "basico", emoji: "👧" },
+      { he: "דוד", tr: "dod", pt: "tio", es: "tío", en: "uncle", it: "zio", level: "basico", emoji: "👨" },
+      { he: "דודה", tr: "doda", pt: "tia", es: "tía", en: "aunt", it: "zia", level: "basico", emoji: "👩" },
+      { he: "בן דוד", tr: "ben dod", pt: "primo", es: "primo", en: "cousin", it: "cugino", level: "basico", emoji: "🧑" },
+      { he: "בעל", tr: "ba'al", pt: "marido", es: "esposo", en: "husband", it: "marito", level: "basico", emoji: "🤵" },
+      { he: "אישה", tr: "isha", pt: "esposa", es: "esposa", en: "wife", it: "moglie", level: "basico", emoji: "👰" },
+      { he: "נכד", tr: "neched", pt: "neto", es: "nieto", en: "grandson", it: "nipote", level: "basico", emoji: "👦" },
+      { he: "נכדה", tr: "nechda", pt: "neta", es: "nieta", en: "granddaughter", it: "nipote", level: "basico", emoji: "👧" },
+      { he: "בת דודה", tr: "bat doda", pt: "prima", es: "prima", en: "cousin (f)", it: "cugina", level: "basico", emoji: "👩" },
+      { he: "גיס", tr: "gis", pt: "cunhado", es: "cuñado", en: "brother-in-law", it: "cognato", level: "basico", emoji: "🤵" },
+      { he: "גיסה", tr: "gisa", pt: "cunhada", es: "cuñada", en: "sister-in-law", it: "cognata", level: "medio", emoji: "👰" },
+      { he: "חם", tr: "cham", pt: "sogro", es: "suegro", en: "father-in-law", it: "suocero", level: "medio", emoji: "👴" },
+      { he: "חמות", tr: "chamot", pt: "sogra", es: "suegra", en: "mother-in-law", it: "suocera", level: "medio", emoji: "👵" },
+      { he: "חתן", tr: "chatan", pt: "noivo", es: "novio", en: "groom", it: "sposo", level: "medio", emoji: "🤵" },
+      { he: "כלה", tr: "kala", pt: "noiva", es: "novia", en: "bride", it: "sposa", level: "medio", emoji: "👰" },
+      { he: "תינוק", tr: "tinok", pt: "bebê", es: "bebé", en: "baby", it: "bebè", level: "medio", emoji: "👶" },
+      { he: "ילד", tr: "yeled", pt: "menino", es: "niño", en: "boy", it: "bambino", level: "medio", emoji: "👦" },
+      { he: "ילדה", tr: "yalda", pt: "menina", es: "niña", en: "girl", it: "bambina", level: "medio", emoji: "👧" },
+      { he: "מבוגר", tr: "mevugar", pt: "adulto", es: "adulto", en: "adult", it: "adulto", level: "medio", emoji: "🧑" },
+      { he: "בן זוג", tr: "ben zug", pt: "parceiro", es: "pareja", en: "partner (m)", it: "partner", level: "medio", emoji: "💑" },
+      { he: "בת זוג", tr: "bat zug", pt: "parceira", es: "pareja", en: "partner (f)", it: "partner", level: "medio", emoji: "💑" },
+      { he: "הורים", tr: "horim", pt: "pais", es: "padres", en: "parents", it: "genitori", level: "medio", emoji: "👨‍👩‍👧" },
+      { he: "אחים", tr: "achim", pt: "irmãos", es: "hermanos", en: "siblings", it: "fratelli", level: "medio", emoji: "👫" },
+      { he: "משפחה", tr: "mishpacha", pt: "família", es: "familia", en: "family", it: "famiglia", level: "medio", emoji: "👨‍👩‍👧‍👦" },
+      { he: "סבא רבא", tr: "saba raba", pt: "bisavô", es: "bisabuelo", en: "great-grandfather", it: "bisnonno", level: "medio", emoji: "👴" },
+      { he: "סבתא רבתא", tr: "savta rabta", pt: "bisavó", es: "bisabuela", en: "great-grandmother", it: "bisnonna", level: "medio", emoji: "👵" },
+      { he: "נין", tr: "nin", pt: "bisneto", es: "bisnieto", en: "great-grandson", it: "pronipote", level: "medio", emoji: "👶" },
+      { he: "אח חורג", tr: "ach choreg", pt: "meio-irmão", es: "hermanastro", en: "stepbrother", it: "fratellastro", level: "forte", emoji: "👦" },
+      { he: "אחות חורגת", tr: "achot choreget", pt: "meia-irmã", es: "hermanastra", en: "stepsister", it: "sorellastra", level: "forte", emoji: "👧" },
+      { he: "אב חורג", tr: "av choreg", pt: "padrasto", es: "padrastro", en: "stepfather", it: "patrigno", level: "forte", emoji: "👨" },
+      { he: "אם חורגת", tr: "em choreget", pt: "madrasta", es: "madrastra", en: "stepmother", it: "matrigna", level: "forte", emoji: "👩" },
+      { he: "בן חורג", tr: "ben choreg", pt: "enteado", es: "hijastro", en: "stepson", it: "figliastro", level: "forte", emoji: "👦" },
+      { he: "בת חורגת", tr: "bat choreget", pt: "enteada", es: "hijastra", en: "stepdaughter", it: "figliastra", level: "forte", emoji: "👧" },
+      { he: "תאום", tr: "te'om", pt: "gêmeo", es: "gemelo", en: "twin", it: "gemello", level: "forte", emoji: "👯" },
+      { he: "קרוב משפחה", tr: "karov mishpacha", pt: "parente", es: "pariente", en: "relative", it: "parente", level: "forte", emoji: "👥" },
+      { he: "אלמן", tr: "alman", pt: "viúvo", es: "viudo", en: "widower", it: "vedovo", level: "forte", emoji: "🖤" },
+      { he: "אלמנה", tr: "almana", pt: "viúva", es: "viuda", en: "widow", it: "vedova", level: "forte", emoji: "🖤" },
+      { he: "רווק", tr: "ravak", pt: "solteiro", es: "soltero", en: "single (m)", it: "single", level: "forte", emoji: "🙋‍♂️" },
+      { he: "רווקה", tr: "ravaka", pt: "solteira", es: "soltera", en: "single (f)", it: "single", level: "forte", emoji: "🙋‍♀️" },
+      { he: "נשוי", tr: "nasui", pt: "casado", es: "casado", en: "married", it: "sposato", level: "forte", emoji: "💍" },
+      { he: "גרוש", tr: "garush", pt: "divorciado", es: "divorciado", en: "divorced", it: "divorziato", level: "forte", emoji: "💔" },
+      { he: "אח תאום", tr: "ach te'om", pt: "irmão gêmeo", es: "hermano gemelo", en: "twin brother", it: "fratello gemello", level: "forte", emoji: "👦" },
+      { he: "אחות תאומה", tr: "achot te'oma", pt: "irmã gêmea", es: "hermana gemela", en: "twin sister", it: "sorella gemella", level: "forte", emoji: "👧" },
+    ],
+  },
+  {
+    id: "numeros",
+    name: "Números",
+    icon: "🔢",
+    nameLoc: { pt: "Números", en: "Numbers", es: "Números", it: "Numeri" },
+    glyph: "ע",
+    nameHe: "מספרים",
+    accent: "#3B4A6B",
+    words: [
+      { he: "אחת", tr: "achat", pt: "um", es: "uno", en: "one", it: "uno", level: "basico", emoji: "1️⃣", heMasc: "אחד", trMasc: "echad" },
+      { he: "שתיים", tr: "shtayim", pt: "dois", es: "dos", en: "two", it: "due", level: "basico", emoji: "2️⃣", heMasc: "שניים", trMasc: "shnayim" },
+      { he: "שלוש", tr: "shalosh", pt: "três", es: "tres", en: "three", it: "tre", level: "basico", emoji: "3️⃣", heMasc: "שלושה", trMasc: "shlosha" },
+      { he: "ארבע", tr: "arba", pt: "quatro", es: "cuatro", en: "four", it: "quattro", level: "basico", emoji: "4️⃣", heMasc: "ארבעה", trMasc: "arba'a" },
+      { he: "חמש", tr: "chamesh", pt: "cinco", es: "cinco", en: "five", it: "cinque", level: "basico", emoji: "5️⃣", heMasc: "חמישה", trMasc: "chamisha" },
+      { he: "שש", tr: "shesh", pt: "seis", es: "seis", en: "six", it: "sei", level: "basico", emoji: "6️⃣", heMasc: "שישה", trMasc: "shisha" },
+      { he: "שבע", tr: "sheva", pt: "sete", es: "siete", en: "seven", it: "sette", level: "basico", emoji: "7️⃣", heMasc: "שבעה", trMasc: "shiv'a" },
+      { he: "שמונה", tr: "shmone", pt: "oito", es: "ocho", en: "eight", it: "otto", level: "basico", emoji: "8️⃣", heMasc: "שמונה", trMasc: "shmona" },
+      { he: "תשע", tr: "tesha", pt: "nove", es: "nueve", en: "nine", it: "nove", level: "basico", emoji: "9️⃣", heMasc: "תשעה", trMasc: "tish'a" },
+      { he: "עשר", tr: "eser", pt: "dez", es: "diez", en: "ten", it: "dieci", level: "basico", emoji: "🔟", heMasc: "עשרה", trMasc: "asara" },
+      { he: "אחת עשרה", tr: "achat esre", pt: "onze", es: "once", en: "eleven", it: "undici", level: "basico", emoji: "🔢", heMasc: "אחד עשר", trMasc: "achad asar" },
+      { he: "שתים עשרה", tr: "shteim esre", pt: "doze", es: "doce", en: "twelve", it: "dodici", level: "basico", emoji: "🔢", heMasc: "שנים עשר", trMasc: "shneim asar" },
+      { he: "שלוש עשרה", tr: "shlosh esre", pt: "treze", es: "trece", en: "thirteen", it: "tredici", level: "basico", emoji: "🔢", heMasc: "שלושה עשר", trMasc: "shlosha asar" },
+      { he: "ארבע עשרה", tr: "arba esre", pt: "quatorze", es: "catorce", en: "fourteen", it: "quattordici", level: "basico", emoji: "🔢", heMasc: "ארבעה עשר", trMasc: "arba'a asar" },
+      { he: "חמש עשרה", tr: "chamesh esre", pt: "quinze", es: "quince", en: "fifteen", it: "quindici", level: "basico", emoji: "🔢", heMasc: "חמישה עשר", trMasc: "chamisha asar" },
+      { he: "שש עשרה", tr: "shesh esre", pt: "dezesseis", es: "dieciséis", en: "sixteen", it: "sedici", level: "basico", emoji: "🔢", heMasc: "שישה עשר", trMasc: "shisha asar" },
+      { he: "שבע עשרה", tr: "shva esre", pt: "dezessete", es: "diecisiete", en: "seventeen", it: "diciassette", level: "basico", emoji: "🔢", heMasc: "שבעה עשר", trMasc: "shiv'a asar" },
+      { he: "שמונה עשרה", tr: "shmone esre", pt: "dezoito", es: "dieciocho", en: "eighteen", it: "diciotto", level: "medio", emoji: "🔢", heMasc: "שמונה עשר", trMasc: "shmona asar" },
+      { he: "תשע עשרה", tr: "tsha esre", pt: "dezenove", es: "diecinueve", en: "nineteen", it: "diciannove", level: "medio", emoji: "🔢", heMasc: "תשעה עשר", trMasc: "tish'a asar" },
+      { he: "עשרים", tr: "esrim", pt: "vinte", es: "veinte", en: "twenty", it: "venti", level: "medio", emoji: "🔢" },
+      { he: "עשרים ואחת", tr: "esrim ve'achat", pt: "vinte e um", es: "veintiuno", en: "twenty-one", it: "ventuno", level: "medio", emoji: "🔢" },
+      { he: "עשרים ושתיים", tr: "esrim u'shtayim", pt: "vinte e dois", es: "veintidós", en: "twenty-two", it: "ventidue", level: "medio", emoji: "🔢" },
+      { he: "עשרים ושלוש", tr: "esrim ve'shalosh", pt: "vinte e três", es: "veintitrés", en: "twenty-three", it: "ventitré", level: "medio", emoji: "🔢" },
+      { he: "עשרים וארבע", tr: "esrim ve'arba", pt: "vinte e quatro", es: "veinticuatro", en: "twenty-four", it: "ventiquattro", level: "medio", emoji: "🔢" },
+      { he: "עשרים וחמש", tr: "esrim ve'chamesh", pt: "vinte e cinco", es: "veinticinco", en: "twenty-five", it: "venticinque", level: "medio", emoji: "🔢" },
+      { he: "עשרים ושש", tr: "esrim ve'shesh", pt: "vinte e seis", es: "veintiséis", en: "twenty-six", it: "ventisei", level: "medio", emoji: "🔢" },
+      { he: "עשרים ושבע", tr: "esrim ve'sheva", pt: "vinte e sete", es: "veintisiete", en: "twenty-seven", it: "ventisette", level: "medio", emoji: "🔢" },
+      { he: "עשרים ושמונה", tr: "esrim u'shmone", pt: "vinte e oito", es: "veintiocho", en: "twenty-eight", it: "ventotto", level: "medio", emoji: "🔢" },
+      { he: "עשרים ותשע", tr: "esrim ve'tesha", pt: "vinte e nove", es: "veintinueve", en: "twenty-nine", it: "ventinove", level: "medio", emoji: "🔢" },
+      { he: "שלושים", tr: "shloshim", pt: "trinta", es: "treinta", en: "thirty", it: "trenta", level: "medio", emoji: "🔢" },
+      { he: "שלושים ואחת", tr: "shloshim ve'achat", pt: "trinta e um", es: "treinta y uno", en: "thirty-one", it: "trentuno", level: "medio", emoji: "🔢" },
+      { he: "שלושים ושתיים", tr: "shloshim u'shtayim", pt: "trinta e dois", es: "treinta y dos", en: "thirty-two", it: "trentadue", level: "medio", emoji: "🔢" },
+      { he: "שלושים ושלוש", tr: "shloshim ve'shalosh", pt: "trinta e três", es: "treinta y tres", en: "thirty-three", it: "trentatré", level: "medio", emoji: "🔢" },
+      { he: "שלושים וארבע", tr: "shloshim ve'arba", pt: "trinta e quatro", es: "treinta y cuatro", en: "thirty-four", it: "trentaquattro", level: "medio", emoji: "🔢" },
+      { he: "שלושים וחמש", tr: "shloshim ve'chamesh", pt: "trinta e cinco", es: "treinta y cinco", en: "thirty-five", it: "trentacinque", level: "forte", emoji: "🔢" },
+      { he: "שלושים ושש", tr: "shloshim ve'shesh", pt: "trinta e seis", es: "treinta y seis", en: "thirty-six", it: "trentasei", level: "forte", emoji: "🔢" },
+      { he: "שלושים ושבע", tr: "shloshim ve'sheva", pt: "trinta e sete", es: "treinta y siete", en: "thirty-seven", it: "trentasette", level: "forte", emoji: "🔢" },
+      { he: "שלושים ושמונה", tr: "shloshim u'shmone", pt: "trinta e oito", es: "treinta y ocho", en: "thirty-eight", it: "trentotto", level: "forte", emoji: "🔢" },
+      { he: "שלושים ותשע", tr: "shloshim ve'tesha", pt: "trinta e nove", es: "treinta y nueve", en: "thirty-nine", it: "trentanove", level: "forte", emoji: "🔢" },
+      { he: "ארבעים", tr: "arba'im", pt: "quarenta", es: "cuarenta", en: "forty", it: "quaranta", level: "forte", emoji: "🔢" },
+      { he: "ארבעים ואחת", tr: "arba'im ve'achat", pt: "quarenta e um", es: "cuarenta y uno", en: "forty-one", it: "quarantuno", level: "forte", emoji: "🔢" },
+      { he: "ארבעים ושתיים", tr: "arba'im u'shtayim", pt: "quarenta e dois", es: "cuarenta y dos", en: "forty-two", it: "quarantadue", level: "forte", emoji: "🔢" },
+      { he: "ארבעים ושלוש", tr: "arba'im ve'shalosh", pt: "quarenta e três", es: "cuarenta y tres", en: "forty-three", it: "quarantatré", level: "forte", emoji: "🔢" },
+      { he: "ארבעים וארבע", tr: "arba'im ve'arba", pt: "quarenta e quatro", es: "cuarenta y cuatro", en: "forty-four", it: "quarantaquattro", level: "forte", emoji: "🔢" },
+      { he: "ארבעים וחמש", tr: "arba'im ve'chamesh", pt: "quarenta e cinco", es: "cuarenta y cinco", en: "forty-five", it: "quarantacinque", level: "forte", emoji: "🔢" },
+      { he: "ארבעים ושש", tr: "arba'im ve'shesh", pt: "quarenta e seis", es: "cuarenta y seis", en: "forty-six", it: "quarantasei", level: "forte", emoji: "🔢" },
+      { he: "ארבעים ושבע", tr: "arba'im ve'sheva", pt: "quarenta e sete", es: "cuarenta y siete", en: "forty-seven", it: "quarantasette", level: "forte", emoji: "🔢" },
+      { he: "ארבעים ושמונה", tr: "arba'im u'shmone", pt: "quarenta e oito", es: "cuarenta y ocho", en: "forty-eight", it: "quarantotto", level: "forte", emoji: "🔢" },
+      { he: "ארבעים ותשע", tr: "arba'im ve'tesha", pt: "quarenta e nove", es: "cuarenta y nueve", en: "forty-nine", it: "quarantanove", level: "forte", emoji: "🔢" },
+      { he: "חמישים", tr: "chamishim", pt: "cinquenta", es: "cincuenta", en: "fifty", it: "cinquanta", level: "forte", emoji: "🔢" },
+    ],
+  },
+  {
+    id: "comida",
+    name: "Comida",
+    icon: "🍽️",
+    nameLoc: { pt: "Comida", en: "Food", es: "Comida", it: "Cibo" },
+    glyph: "ל",
+    nameHe: "אוכל",
+    accent: "#A6541D",
+    words: [
+      { he: "לחם", tr: "lechem", pt: "pão", es: "pan", en: "bread", it: "pane", level: "basico", emoji: "🍞" },
+      { he: "אורז", tr: "orez", pt: "arroz", es: "arroz", en: "rice", it: "riso", level: "basico", emoji: "🍚" },
+      { he: "מרק", tr: "marak", pt: "sopa", es: "sopa", en: "soup", it: "zuppa", level: "basico", emoji: "🍲" },
+      { he: "גבינה", tr: "gvina", pt: "queijo", es: "queso", en: "cheese", it: "formaggio", level: "basico", emoji: "🧀" },
+      { he: "ביצה", tr: "beytsa", pt: "ovo", es: "huevo", en: "egg", it: "uovo", level: "basico", emoji: "🥚" },
+      { he: "חלב", tr: "chalav", pt: "leite", es: "leche", en: "milk", it: "latte", level: "basico", emoji: "🥛" },
+      { he: "מים", tr: "mayim", pt: "água", es: "agua", en: "water", it: "acqua", level: "basico", emoji: "💧" },
+      { he: "בשר", tr: "basar", pt: "carne", es: "carne", en: "meat", it: "carne", level: "basico", emoji: "🥩" },
+      { he: "סלט", tr: "salat", pt: "salada", es: "ensalada", en: "salad", it: "insalata", level: "basico", emoji: "🥗" },
+      { he: "גלידה", tr: "glida", pt: "sorvete", es: "helado", en: "ice cream", it: "gelato", level: "basico", emoji: "🍨" },
+      { he: "שוקולד", tr: "shokolad", pt: "chocolate", es: "chocolate", en: "chocolate", it: "cioccolato", level: "basico", emoji: "🍫" },
+      { he: "קפה", tr: "kafe", pt: "café", es: "café", en: "coffee", it: "caffè", level: "basico", emoji: "☕" },
+      { he: "תה", tr: "te", pt: "chá", es: "té", en: "tea", it: "tè", level: "basico", emoji: "🍵" },
+      { he: "סוכר", tr: "sukar", pt: "açúcar", es: "azúcar", en: "sugar", it: "zucchero", level: "basico", emoji: "🍬" },
+      { he: "מלח", tr: "melach", pt: "sal", es: "sal", en: "salt", it: "sale", level: "basico", emoji: "🧂" },
+      { he: "עוגה", tr: "uga", pt: "bolo", es: "pastel", en: "cake", it: "torta", level: "basico", emoji: "🎂" },
+      { he: "עוגייה", tr: "ugiya", pt: "biscoito", es: "galleta", en: "cookie", it: "biscotto", level: "basico", emoji: "🍪" },
+      { he: "פסטה", tr: "pasta", pt: "massa", es: "pasta", en: "pasta", it: "pasta", level: "medio", emoji: "🍝" },
+      { he: "פיצה", tr: "pitza", pt: "pizza", es: "pizza", en: "pizza", it: "pizza", level: "medio", emoji: "🍕" },
+      { he: "המבורגר", tr: "hamburger", pt: "hambúrguer", es: "hamburguesa", en: "hamburger", it: "hamburger", level: "medio", emoji: "🍔" },
+      { he: "נקניקייה", tr: "nakniykiya", pt: "salsicha", es: "salchicha", en: "sausage", it: "salsiccia", level: "medio", emoji: "🌭" },
+      { he: "עוף", tr: "of", pt: "frango", es: "pollo", en: "chicken", it: "pollo", level: "medio", emoji: "🍗" },
+      { he: "טונה", tr: "tuna", pt: "atum", es: "atún", en: "tuna", it: "tonno", level: "medio", emoji: "🐟" },
+      { he: "שמן זית", tr: "shemen zayit", pt: "azeite de oliva", es: "aceite de oliva", en: "olive oil", it: "olio d'oliva", level: "medio", emoji: "🫒" },
+      { he: "חומץ", tr: "chometz", pt: "vinagre", es: "vinagre", en: "vinegar", it: "aceto", level: "medio", emoji: "🍾" },
+      { he: "פלפל שחור", tr: "pilpel shachor", pt: "pimenta-do-reino", es: "pimienta negra", en: "black pepper", it: "pepe nero", level: "medio", emoji: "🌶️" },
+      { he: "בצל", tr: "batsal", pt: "cebola", es: "cebolla", en: "onion", it: "cipolla", level: "medio", emoji: "🧅" },
+      { he: "שום", tr: "shum", pt: "alho", es: "ajo", en: "garlic", it: "aglio", level: "medio", emoji: "🧄" },
+      { he: "עגבנייה", tr: "agvaniya", pt: "tomate", es: "tomate", en: "tomato", it: "pomodoro", level: "medio", emoji: "🍅" },
+      { he: "מלפפון", tr: "melafefon", pt: "pepino", es: "pepino", en: "cucumber", it: "cetriolo", level: "medio", emoji: "🥒" },
+      { he: "גזר", tr: "gezer", pt: "cenoura", es: "zanahoria", en: "carrot", it: "carota", level: "medio", emoji: "🥕" },
+      { he: "תפוח אדמה", tr: "tapuach adama", pt: "batata", es: "papa", en: "potato", it: "patata", level: "medio", emoji: "🥔" },
+      { he: "חסה", tr: "chasa", pt: "alface", es: "lechuga", en: "lettuce", it: "lattuga", level: "medio", emoji: "🥬" },
+      { he: "כרוב", tr: "kruv", pt: "repolho", es: "col", en: "cabbage", it: "cavolo", level: "medio", emoji: "🥬" },
+      { he: "פלפל ירוק", tr: "pilpel yarok", pt: "pimentão verde", es: "pimiento verde", en: "green pepper", it: "peperone verde", level: "forte", emoji: "🫑" },
+      { he: "תירס", tr: "tiras", pt: "milho", es: "maíz", en: "corn", it: "mais", level: "forte", emoji: "🌽" },
+      { he: "שעועית", tr: "she'u'it", pt: "feijão", es: "frijol", en: "beans", it: "fagioli", level: "forte", emoji: "🫘" },
+      { he: "עדשים", tr: "adashim", pt: "lentilhas", es: "lentejas", en: "lentils", it: "lenticchie", level: "forte", emoji: "🫘" },
+      { he: "חומוס", tr: "chumus", pt: "grão-de-bico", es: "garbanzos", en: "chickpeas", it: "ceci", level: "forte", emoji: "🧆" },
+      { he: "טחינה", tr: "techina", pt: "tahine", es: "tahini", en: "tahini", it: "tahin", level: "forte", emoji: "🥜" },
+      { he: "זיתים", tr: "zeytim", pt: "azeitonas", es: "aceitunas", en: "olives", it: "olive", level: "forte", emoji: "🫒" },
+      { he: "יין", tr: "yayin", pt: "vinho", es: "vino", en: "wine", it: "vino", level: "forte", emoji: "🍷" },
+      { he: "בירה", tr: "bira", pt: "cerveja", es: "cerveza", en: "beer", it: "birra", level: "forte", emoji: "🍺" },
+      { he: "מיץ", tr: "mitz", pt: "suco", es: "jugo", en: "juice", it: "succo", level: "forte", emoji: "🧃" },
+      { he: "דבש", tr: "dvash", pt: "mel", es: "miel", en: "honey", it: "miele", level: "forte", emoji: "🍯" },
+      { he: "חמאה", tr: "chem'a", pt: "manteiga", es: "mantequilla", en: "butter", it: "burro", level: "forte", emoji: "🧈" },
+      { he: "יוגורט", tr: "yogurt", pt: "iogurte", es: "yogur", en: "yogurt", it: "yogurt", level: "forte", emoji: "🥛" },
+      { he: "קמח", tr: "kemach", pt: "farinha", es: "harina", en: "flour", it: "farina", level: "forte", emoji: "🌾" },
+      { he: "מיונז", tr: "mayonez", pt: "maionese", es: "mayonesa", en: "mayonnaise", it: "maionese", level: "forte", emoji: "🥫" },
+      { he: "קטשופ", tr: "ketshup", pt: "ketchup", es: "kétchup", en: "ketchup", it: "ketchup", level: "forte", emoji: "🍅" },
+    ],
+  },
+  {
+    id: "corpo",
+    name: "Corpo",
+    icon: "🧍",
+    nameLoc: { pt: "Corpo", en: "Body", es: "Cuerpo", it: "Corpo" },
+    glyph: "ר",
+    nameHe: "גוף",
+    accent: "#9C3D54",
+    words: [
+      { he: "ראש", tr: "rosh", pt: "cabeça", es: "cabeza", en: "head", it: "testa", level: "basico", emoji: "👤" },
+      { he: "עין", tr: "ayin", pt: "olho", es: "ojo", en: "eye", it: "occhio", level: "basico", emoji: "👁️" },
+      { he: "אף", tr: "af", pt: "nariz", es: "nariz", en: "nose", it: "naso", level: "basico", emoji: "👃" },
+      { he: "פה", tr: "pe", pt: "boca", es: "boca", en: "mouth", it: "bocca", level: "basico", emoji: "👄" },
+      { he: "אוזן", tr: "ozen", pt: "orelha", es: "oreja", en: "ear", it: "orecchio", level: "basico", emoji: "👂" },
+      { he: "יד", tr: "yad", pt: "mão", es: "mano", en: "hand", it: "mano", level: "basico", emoji: "✋" },
+      { he: "רגל", tr: "regel", pt: "pé", es: "pie", en: "foot", it: "piede", level: "basico", emoji: "🦶" },
+      { he: "זרוע", tr: "zroa", pt: "braço", es: "brazo", en: "arm", it: "braccio", level: "basico", emoji: "💪" },
+      { he: "לב", tr: "lev", pt: "coração", es: "corazón", en: "heart", it: "cuore", level: "basico", emoji: "❤️" },
+      { he: "שיער", tr: "se'ar", pt: "cabelo", es: "cabello", en: "hair", it: "capelli", level: "basico", emoji: "💇" },
+      { he: "אצבע", tr: "etsba", pt: "dedo", es: "dedo", en: "finger", it: "dito", level: "basico", emoji: "👆" },
+      { he: "גב", tr: "gav", pt: "costas", es: "espalda", en: "back", it: "schiena", level: "basico", emoji: "🔙" },
+      { he: "בטן", tr: "beten", pt: "barriga", es: "panza", en: "belly", it: "pancia", level: "basico", emoji: "🫃" },
+      { he: "שן", tr: "shen", pt: "dente", es: "diente", en: "tooth", it: "dente", level: "basico", emoji: "🦷" },
+      { he: "כתף", tr: "katef", pt: "ombro", es: "hombro", en: "shoulder", it: "spalla", level: "basico", emoji: "🤷" },
+      { he: "ברך", tr: "berech", pt: "joelho", es: "rodilla", en: "knee", it: "ginocchio", level: "basico", emoji: "🦵" },
+      { he: "קרסול", tr: "karsol", pt: "tornozelo", es: "tobillo", en: "ankle", it: "caviglia", level: "basico", emoji: "🦶" },
+      { he: "מרפק", tr: "marpek", pt: "cotovelo", es: "codo", en: "elbow", it: "gomito", level: "medio", emoji: "💪" },
+      { he: "צוואר", tr: "tsavar", pt: "pescoço", es: "cuello", en: "neck", it: "collo", level: "medio", emoji: "👔" },
+      { he: "לחי", tr: "lechi", pt: "bochecha", es: "mejilla", en: "cheek", it: "guancia", level: "medio", emoji: "👉" },
+      { he: "מצח", tr: "metzach", pt: "testa", es: "frente", en: "forehead", it: "fronte", level: "medio", emoji: "🤔" },
+      { he: "סנטר", tr: "santer", pt: "queixo", es: "barbilla", en: "chin", it: "mento", level: "medio", emoji: "😊" },
+      { he: "גבה", tr: "gaba", pt: "sobrancelha", es: "ceja", en: "eyebrow", it: "sopracciglio", level: "medio", emoji: "🤨" },
+      { he: "ריס", tr: "ris", pt: "cílio", es: "pestaña", en: "eyelash", it: "ciglio", level: "medio", emoji: "👁️" },
+      { he: "שפה", tr: "safa", pt: "lábio", es: "labio", en: "lip", it: "labbro", level: "medio", emoji: "👄" },
+      { he: "לשון", tr: "lashon", pt: "língua", es: "lengua", en: "tongue", it: "lingua", level: "medio", emoji: "👅" },
+      { he: "עצם", tr: "etsem", pt: "osso", es: "hueso", en: "bone", it: "osso", level: "medio", emoji: "🦴" },
+      { he: "שריר", tr: "shrir", pt: "músculo", es: "músculo", en: "muscle", it: "muscolo", level: "medio", emoji: "💪" },
+      { he: "עור", tr: "or", pt: "pele", es: "piel", en: "skin", it: "pelle", level: "medio", emoji: "🧴" },
+      { he: "ריאה", tr: "re'a", pt: "pulmão", es: "pulmón", en: "lung", it: "polmone", level: "medio", emoji: "🫁" },
+      { he: "כבד", tr: "kaved", pt: "fígado", es: "hígado", en: "liver", it: "fegato", level: "medio", emoji: "🫀" },
+      { he: "כליה", tr: "klaya", pt: "rim", es: "riñón", en: "kidney", it: "rene", level: "medio", emoji: "🫘" },
+      { he: "קיבה", tr: "keiva", pt: "estômago", es: "estómago", en: "stomach", it: "stomaco", level: "medio", emoji: "🫃" },
+      { he: "מוח", tr: "moach", pt: "cérebro", es: "cerebro", en: "brain", it: "cervello", level: "medio", emoji: "🧠" },
+      { he: "עמוד שדרה", tr: "amud shidra", pt: "coluna vertebral", es: "columna vertebral", en: "spine", it: "colonna vertebrale", level: "forte", emoji: "🦴" },
+      { he: "ירך", tr: "yarech", pt: "coxa", es: "muslo", en: "thigh", it: "coscia", level: "forte", emoji: "🦵" },
+      { he: "שוק", tr: "shok", pt: "canela", es: "pantorrilla", en: "shin", it: "stinco", level: "forte", emoji: "🦵" },
+      { he: "עקב", tr: "akev", pt: "calcanhar", es: "talón", en: "heel", it: "tallone", level: "forte", emoji: "👣" },
+      { he: "כף יד", tr: "kaf yad", pt: "palma da mão", es: "palma de la mano", en: "palm", it: "palmo della mano", level: "forte", emoji: "✋" },
+      { he: "כף רגל", tr: "kaf regel", pt: "planta do pé", es: "planta del pie", en: "sole", it: "pianta del piede", level: "forte", emoji: "🦶" },
+      { he: "ציפורן", tr: "tsiporen", pt: "unha", es: "uña", en: "nail", it: "unghia", level: "forte", emoji: "💅" },
+      { he: "פרק כף היד", tr: "perek kaf hayad", pt: "pulso", es: "muñeca", en: "wrist", it: "polso", level: "forte", emoji: "✋" },
+      { he: "אגן", tr: "agan", pt: "quadril", es: "cadera", en: "hip", it: "anca", level: "forte", emoji: "🦴" },
+      { he: "טבור", tr: "tabur", pt: "umbigo", es: "ombligo", en: "navel", it: "ombelico", level: "forte", emoji: "🫃" },
+      { he: "גרון", tr: "garon", pt: "garganta", es: "garganta", en: "throat", it: "gola", level: "forte", emoji: "🗣️" },
+      { he: "לסת", tr: "leset", pt: "mandíbula", es: "mandíbula", en: "jaw", it: "mascella", level: "forte", emoji: "😬" },
+      { he: "דם", tr: "dam", pt: "sangue", es: "sangre", en: "blood", it: "sangue", level: "forte", emoji: "🩸" },
+      { he: "עורק", tr: "orek", pt: "artéria", es: "arteria", en: "artery", it: "arteria", level: "forte", emoji: "🩸" },
+      { he: "וריד", tr: "varid", pt: "veia", es: "vena", en: "vein", it: "vena", level: "forte", emoji: "🩸" },
+      { he: "זקן", tr: "zakan", pt: "barba", es: "barba", en: "beard", it: "barba", level: "forte", emoji: "🧔" },
+    ],
+  },
+  {
+    id: "casa",
+    name: "Casa",
+    icon: "🏠",
+    nameLoc: { pt: "Casa", en: "House", es: "Casa", it: "Casa" },
+    glyph: "ב",
+    nameHe: "בית",
+    accent: "#2E5C6E",
+    words: [
+      { he: "בית", tr: "bayit", pt: "casa", es: "casa", en: "house", it: "casa", level: "basico", emoji: "🏠" },
+      { he: "חדר", tr: "cheder", pt: "quarto", es: "habitación", en: "room", it: "stanza", level: "basico", emoji: "🚪" },
+      { he: "מטבח", tr: "mitbach", pt: "cozinha", es: "cocina", en: "kitchen", it: "cucina", level: "basico", emoji: "🍳" },
+      { he: "שירותים", tr: "sherutim", pt: "banheiro", es: "baño", en: "bathroom", it: "bagno", level: "basico", emoji: "🚿" },
+      { he: "סלון", tr: "salon", pt: "sala", es: "salón", en: "living room", it: "soggiorno", level: "basico", emoji: "🛋️" },
+      { he: "דלת", tr: "delet", pt: "porta", es: "puerta", en: "door", it: "porta", level: "basico", emoji: "🚪" },
+      { he: "חלון", tr: "chalon", pt: "janela", es: "ventana", en: "window", it: "finestra", level: "basico", emoji: "🪟" },
+      { he: "מפתח", tr: "maftea'ch", pt: "chave", es: "llave", en: "key", it: "chiave", level: "basico", emoji: "🔑" },
+      { he: "גינה", tr: "gina", pt: "jardim", es: "jardín", en: "garden", it: "giardino", level: "basico", emoji: "🌷" },
+      { he: "תקרה", tr: "tikra", pt: "teto", es: "techo", en: "ceiling", it: "soffitto", level: "basico", emoji: "🏠" },
+      { he: "קיר", tr: "kir", pt: "parede", es: "pared", en: "wall", it: "parete", level: "basico", emoji: "🧱" },
+      { he: "מדרגות", tr: "madregot", pt: "escada", es: "escalera", en: "stairs", it: "scale", level: "basico", emoji: "📶" },
+      { he: "חדר שינה", tr: "cheder shena", pt: "quarto de dormir", es: "dormitorio", en: "bedroom", it: "camera da letto", level: "basico", emoji: "🛏️" },
+      { he: "מרפסת", tr: "mirpeset", pt: "varanda", es: "balcón", en: "balcony", it: "balcone", level: "basico", emoji: "🌇" },
+      { he: "חצר", tr: "chatzer", pt: "quintal", es: "patio", en: "backyard", it: "cortile", level: "basico", emoji: "🌳" },
+      { he: "גג", tr: "gag", pt: "telhado", es: "tejado", en: "roof", it: "tetto", level: "basico", emoji: "🏠" },
+      { he: "רצפה", tr: "ritspa", pt: "piso", es: "suelo", en: "floor", it: "pavimento", level: "basico", emoji: "🟫" },
+      { he: "מסדרון", tr: "misdaron", pt: "corredor", es: "pasillo", en: "hallway", it: "corridoio", level: "medio", emoji: "🚪" },
+      { he: "מוסך", tr: "musach", pt: "garagem", es: "garaje", en: "garage", it: "garage", level: "medio", emoji: "🚗" },
+      { he: "מרתף", tr: "martef", pt: "porão", es: "sótano", en: "basement", it: "seminterrato", level: "medio", emoji: "🕳️" },
+      { he: "עליית גג", tr: "aliyat gag", pt: "sótão", es: "desván", en: "attic", it: "soffitta", level: "medio", emoji: "🪜" },
+      { he: "חדר עבודה", tr: "cheder avoda", pt: "escritório", es: "oficina en casa", en: "home office", it: "ufficio in casa", level: "medio", emoji: "💻" },
+      { he: "שקע", tr: "sheka", pt: "tomada", es: "enchufe", en: "electric socket", it: "presa elettrica", level: "medio", emoji: "🔌" },
+      { he: "מתג", tr: "meteg", pt: "interruptor", es: "interruptor", en: "switch", it: "interruttore", level: "medio", emoji: "💡" },
+      { he: "מנורת תקרה", tr: "menorat tikra", pt: "lustre", es: "lámpara de techo", en: "ceiling light", it: "lampadario", level: "medio", emoji: "💡" },
+      { he: "דלת כניסה", tr: "delet knisa", pt: "porta de entrada", es: "puerta de entrada", en: "front door", it: "porta d'ingresso", level: "medio", emoji: "🚪" },
+      { he: "דלת אחורית", tr: "delet achorit", pt: "porta dos fundos", es: "puerta trasera", en: "back door", it: "porta sul retro", level: "medio", emoji: "🚪" },
+      { he: "גדר", tr: "gader", pt: "cerca", es: "valla", en: "fence", it: "recinto", level: "medio", emoji: "🚧" },
+      { he: "שער", tr: "sha'ar", pt: "portão", es: "portón", en: "gate", it: "cancello", level: "medio", emoji: "🚪" },
+      { he: "כניסה", tr: "knisa", pt: "entrada", es: "entrada", en: "entrance", it: "ingresso", level: "medio", emoji: "🚪" },
+      { he: "מזוזה", tr: "mezuza", pt: "mezuzá", es: "mezuzá", en: "mezuzah", it: "mezuzah", level: "medio", emoji: "📜" },
+      { he: "מעלית", tr: "ma'alit", pt: "elevador", es: "ascensor", en: "elevator", it: "ascensore", level: "medio", emoji: "🛗" },
+      { he: "קומה", tr: "koma", pt: "andar", es: "piso", en: "floor (storey)", it: "piano", level: "medio", emoji: "🔢" },
+      { he: "בניין", tr: "binyan", pt: "prédio", es: "edificio", en: "building", it: "edificio", level: "medio", emoji: "🏢" },
+      { he: "שכונה", tr: "shchuna", pt: "bairro", es: "barrio", en: "neighborhood", it: "quartiere", level: "forte", emoji: "🏘️" },
+      { he: "כתובת", tr: "ktovet", pt: "endereço", es: "dirección", en: "address", it: "indirizzo", level: "forte", emoji: "📍" },
+      { he: "דואר", tr: "do'ar", pt: "correio", es: "correo", en: "mail", it: "posta", level: "forte", emoji: "📬" },
+      { he: "תיבת דואר", tr: "teivat do'ar", pt: "caixa de correio", es: "buzón", en: "mailbox", it: "cassetta della posta", level: "forte", emoji: "📮" },
+      { he: "פעמון", tr: "pa'amon", pt: "campainha", es: "timbre", en: "doorbell", it: "campanello", level: "forte", emoji: "🔔" },
+      { he: "אח", tr: "ach", pt: "lareira", es: "chimenea", en: "fireplace", it: "camino", level: "forte", emoji: "🔥" },
+      { he: "ארובה", tr: "aruba", pt: "chaminé", es: "chimenea", en: "chimney", it: "canna fumaria", level: "forte", emoji: "🏭" },
+      { he: "חדר כביסה", tr: "cheder kvisa", pt: "lavanderia", es: "lavandería", en: "laundry room", it: "lavanderia", level: "forte", emoji: "🧺" },
+      { he: "מזווה", tr: "mizva", pt: "despensa", es: "despensa", en: "pantry", it: "dispensa", level: "forte", emoji: "🥫" },
+      { he: "דלת הזזה", tr: "delet hazaza", pt: "porta de correr", es: "puerta corrediza", en: "sliding door", it: "porta scorrevole", level: "forte", emoji: "🚪" },
+      { he: "תריס", tr: "trisim", pt: "persiana", es: "persiana", en: "shutter", it: "persiana", level: "forte", emoji: "🪟" },
+      { he: "חדר אורחים", tr: "cheder orchim", pt: "sala de visitas", es: "sala de visitas", en: "guest room", it: "stanza degli ospiti", level: "forte", emoji: "🛌" },
+      { he: "חדר ילדים", tr: "cheder yeladim", pt: "quarto infantil", es: "cuarto infantil", en: "children's room", it: "cameretta dei bambini", level: "forte", emoji: "🧒" },
+      { he: "בריכת שחייה", tr: "breichat schiya", pt: "piscina", es: "piscina", en: "swimming pool", it: "piscina", level: "forte", emoji: "🏊" },
+      { he: "שביל", tr: "shvil", pt: "caminho", es: "camino", en: "path", it: "sentiero", level: "forte", emoji: "🚶" },
+      { he: "אדן חלון", tr: "eden chalon", pt: "parapeito da janela", es: "alféizar", en: "windowsill", it: "davanzale", level: "forte", emoji: "🪟" },
+    ],
+  },
+  {
+    id: "profissoes",
+    name: "Profissões",
+    icon: "💼",
+    nameLoc: { pt: "Profissões", en: "Professions", es: "Profesiones", it: "Professioni" },
+    glyph: "מ",
+    nameHe: "מקצועות",
+    accent: "#4B3F72",
+    words: [
+      { he: "רופא", tr: "rofe", pt: "médico", es: "médico", en: "doctor", it: "medico", level: "basico", emoji: "👨‍⚕️" },
+      { he: "מורה", tr: "more", pt: "professor", es: "profesor", en: "teacher", it: "insegnante", level: "basico", emoji: "👩‍🏫" },
+      { he: "מהנדס", tr: "mehandes", pt: "engenheiro", es: "ingeniero", en: "engineer", it: "ingegnere", level: "basico", emoji: "👷" },
+      { he: "עורך דין", tr: "orech din", pt: "advogado", es: "abogado", en: "lawyer", it: "avvocato", level: "basico", emoji: "⚖️" },
+      { he: "טבח", tr: "tabach", pt: "cozinheiro", es: "cocinero", en: "cook", it: "cuoco", level: "basico", emoji: "👨‍🍳" },
+      { he: "שוטר", tr: "shoter", pt: "policial", es: "policía", en: "police officer", it: "poliziotto", level: "basico", emoji: "👮" },
+      { he: "נהג", tr: "nahag", pt: "motorista", es: "conductor", en: "driver", it: "autista", level: "basico", emoji: "🚗" },
+      { he: "אמן", tr: "oman", pt: "artista", es: "artista", en: "artist", it: "artista", level: "basico", emoji: "🎨" },
+      { he: "חקלאי", tr: "chaklai", pt: "agricultor", es: "agricultor", en: "farmer", it: "agricoltore", level: "basico", emoji: "🌾" },
+      { he: "מדען", tr: "mada'an", pt: "cientista", es: "científico", en: "scientist", it: "scienziato", level: "basico", emoji: "🔬" },
+      { he: "סופר", tr: "sofer", pt: "escritor", es: "escritor", en: "writer", it: "scrittore", level: "basico", emoji: "✍️" },
+      { he: "זמר", tr: "zamar", pt: "cantor", es: "cantante", en: "singer", it: "cantante", level: "basico", emoji: "🎤" },
+      { he: "אחות", tr: "achot", pt: "enfermeira", es: "enfermera", en: "nurse", it: "infermiera", level: "basico", emoji: "👩‍⚕️" },
+      { he: "טייס", tr: "tayas", pt: "piloto", es: "piloto", en: "pilot", it: "pilota", level: "basico", emoji: "👨‍✈️" },
+      { he: "דיילת", tr: "dayelet", pt: "aeromoça", es: "azafata", en: "flight attendant", it: "assistente di volo", level: "basico", emoji: "🛫" },
+      { he: "כבאי", tr: "kabai", pt: "bombeiro", es: "bombero", en: "firefighter", it: "pompiere", level: "basico", emoji: "👨‍🚒" },
+      { he: "חייל", tr: "chayal", pt: "soldado", es: "soldado", en: "soldier", it: "soldato", level: "basico", emoji: "💂" },
+      { he: "פסיכולוג", tr: "psicholog", pt: "psicólogo", es: "psicólogo", en: "psychologist", it: "psicologo", level: "medio", emoji: "🧠" },
+      { he: "רואה חשבון", tr: "ro'e cheshbon", pt: "contador", es: "contador", en: "accountant", it: "contabile", level: "medio", emoji: "🧾" },
+      { he: "אדריכל", tr: "adrichal", pt: "arquiteto", es: "arquitecto", en: "architect", it: "architetto", level: "medio", emoji: "📐" },
+      { he: "צלם", tr: "tsalam", pt: "fotógrafo", es: "fotógrafo", en: "photographer", it: "fotografo", level: "medio", emoji: "📷" },
+      { he: "שחקן", tr: "sachkan", pt: "ator", es: "actor", en: "actor", it: "attore", level: "medio", emoji: "🎭" },
+      { he: "שחקנית", tr: "sachkanit", pt: "atriz", es: "actriz", en: "actress", it: "attrice", level: "medio", emoji: "🎭" },
+      { he: "במאי", tr: "bamai", pt: "diretor de cinema", es: "director de cine", en: "film director", it: "regista", level: "medio", emoji: "🎬" },
+      { he: "מוזיקאי", tr: "muzikai", pt: "músico", es: "músico", en: "musician", it: "musicista", level: "medio", emoji: "🎼" },
+      { he: "רקדן", tr: "rakdan", pt: "dançarino", es: "bailarín", en: "dancer", it: "ballerino", level: "medio", emoji: "💃" },
+      { he: "ספר", tr: "sapar", pt: "cabeleireiro", es: "peluquero", en: "hairdresser", it: "parrucchiere", level: "medio", emoji: "💇" },
+      { he: "מוכר", tr: "mocher", pt: "vendedor", es: "vendedor", en: "salesperson", it: "venditore", level: "medio", emoji: "🛍️" },
+      { he: "קופאי", tr: "kupai", pt: "caixa", es: "cajero", en: "cashier", it: "cassiere", level: "medio", emoji: "💵" },
+      { he: "מלצר", tr: "meltzar", pt: "garçom", es: "mesero", en: "waiter", it: "cameriere", level: "medio", emoji: "🍽️" },
+      { he: "מלצרית", tr: "meltzarit", pt: "garçonete", es: "mesera", en: "waitress", it: "cameriera", level: "medio", emoji: "🍽️" },
+      { he: "דוור", tr: "davar", pt: "carteiro", es: "cartero", en: "mail carrier", it: "postino", level: "medio", emoji: "📮" },
+      { he: "גנן", tr: "ganan", pt: "jardineiro", es: "jardinero", en: "gardener", it: "giardiniere", level: "medio", emoji: "🌻" },
+      { he: "נגר", tr: "nagar", pt: "marceneiro", es: "carpintero", en: "carpenter", it: "falegname", level: "medio", emoji: "🔨" },
+      { he: "חשמלאי", tr: "chashmalai", pt: "eletricista", es: "electricista", en: "electrician", it: "elettricista", level: "forte", emoji: "💡" },
+      { he: "שרברב", tr: "sharvrav", pt: "encanador", es: "plomero", en: "plumber", it: "idraulico", level: "forte", emoji: "🔧" },
+      { he: "צבע", tr: "tsabá", pt: "pintor", es: "pintor", en: "painter", it: "pittore", level: "forte", emoji: "🎨" },
+      { he: "פקיד", tr: "pakid", pt: "funcionário", es: "oficinista", en: "clerk", it: "impiegato", level: "forte", emoji: "🧑‍💼" },
+      { he: "מנהל", tr: "menahel", pt: "gerente", es: "gerente", en: "manager", it: "manager", level: "forte", emoji: "🧑‍💼" },
+      { he: "עובד סוציאלי", tr: "oved sotsiali", pt: "assistente social", es: "trabajador social", en: "social worker", it: "assistente sociale", level: "forte", emoji: "🤝" },
+      { he: "וטרינר", tr: "veterinar", pt: "veterinário", es: "veterinario", en: "veterinarian", it: "veterinario", level: "forte", emoji: "🐾" },
+      { he: "רוקח", tr: "rokeach", pt: "farmacêutico", es: "farmacéutico", en: "pharmacist", it: "farmacista", level: "forte", emoji: "💊" },
+      { he: "כלכלן", tr: "kalkelan", pt: "economista", es: "economista", en: "economist", it: "economista", level: "forte", emoji: "📊" },
+      { he: "עיתונאי", tr: "itonai", pt: "jornalista", es: "periodista", en: "journalist", it: "giornalista", level: "forte", emoji: "📰" },
+      { he: "מתכנת", tr: "metachnet", pt: "programador", es: "programador", en: "programmer", it: "programmatore", level: "forte", emoji: "💻" },
+      { he: "טכנאי", tr: "technai", pt: "técnico", es: "técnico", en: "technician", it: "tecnico", level: "forte", emoji: "🔧" },
+      { he: "בלש", tr: "balash", pt: "detetive", es: "detective", en: "detective", it: "detective", level: "forte", emoji: "🕵️" },
+      { he: "שוער", tr: "sho'er", pt: "porteiro", es: "portero", en: "doorman", it: "portiere", level: "forte", emoji: "🚪" },
+      { he: "אופה", tr: "ofe", pt: "padeiro", es: "panadero", en: "baker", it: "fornaio", level: "forte", emoji: "🍞" },
+      { he: "קצין", tr: "katsin", pt: "oficial", es: "oficial", en: "officer", it: "ufficiale", level: "forte", emoji: "🎖️" },
+    ],
+  },
+  {
+    id: "escola",
+    name: "Escola",
+    icon: "🏫",
+    nameLoc: { pt: "Escola", en: "School", es: "Escuela", it: "Scuola" },
+    glyph: "ב",
+    nameHe: "בית ספר",
+    accent: "#2D5C88",
+    words: [
+      { he: "בית ספר", tr: "beit sefer", pt: "escola", es: "escuela", en: "school", it: "scuola", level: "basico", emoji: "🏫" },
+      { he: "מורה", tr: "more", pt: "professor(a)", es: "profesor", en: "teacher", it: "insegnante", level: "basico", emoji: "👩‍🏫" },
+      { he: "תלמיד", tr: "talmid", pt: "aluno", es: "alumno", en: "student", it: "studente", level: "basico", emoji: "🎓" },
+      { he: "ספר", tr: "sefer", pt: "livro", es: "libro", en: "book", it: "libro", level: "basico", emoji: "📖" },
+      { he: "מחברת", tr: "machberet", pt: "caderno", es: "cuaderno", en: "notebook", it: "quaderno", level: "basico", emoji: "📓" },
+      { he: "עיפרון", tr: "iparon", pt: "lápis", es: "lápiz", en: "pencil", it: "matita", level: "basico", emoji: "✏️" },
+      { he: "עט", tr: "et", pt: "caneta", es: "bolígrafo", en: "pen", it: "penna", level: "basico", emoji: "🖊️" },
+      { he: "מוחק", tr: "mochek", pt: "borracha", es: "goma", en: "eraser", it: "gomma", level: "basico", emoji: "🧽" },
+      { he: "תיק גב", tr: "tik gav", pt: "mochila", es: "mochila", en: "backpack", it: "zaino", level: "basico", emoji: "🎒" },
+      { he: "כיתה", tr: "kita", pt: "sala de aula", es: "aula", en: "classroom", it: "aula", level: "basico", emoji: "🏫" },
+      { he: "לוח", tr: "lu'ach", pt: "quadro", es: "pizarra", en: "board", it: "lavagna", level: "basico", emoji: "📋" },
+      { he: "שולחן", tr: "shulchan", pt: "mesa escolar", es: "pupitre", en: "school desk", it: "banco", level: "basico", emoji: "🪑" },
+      { he: "שיעורי בית", tr: "shiurey bayit", pt: "lição de casa", es: "tarea", en: "homework", it: "compiti", level: "basico", emoji: "📔" },
+      { he: "מבחן", tr: "mivchan", pt: "prova", es: "examen", en: "test", it: "verifica", level: "medio", emoji: "📝" },
+      { he: "ציון", tr: "tsiyun", pt: "nota", es: "nota", en: "grade", it: "voto", level: "medio", emoji: "💯" },
+      { he: "מתמטיקה", tr: "matematika", pt: "matemática", es: "matemáticas", en: "math", it: "matematica", level: "medio", emoji: "➗" },
+      { he: "מדע", tr: "mada", pt: "ciências", es: "ciencias", en: "science", it: "scienze", level: "medio", emoji: "🔬" },
+      { he: "היסטוריה", tr: "historia", pt: "história", es: "historia", en: "history", it: "storia", level: "medio", emoji: "🏛️" },
+      { he: "גיאוגרפיה", tr: "ge'ografia", pt: "geografia", es: "geografía", en: "geography", it: "geografia", level: "medio", emoji: "🗺️" },
+      { he: "הפסקה", tr: "hafsaka", pt: "recreio", es: "recreo", en: "recess", it: "ricreazione", level: "medio", emoji: "⚽" },
+      { he: "ספרייה", tr: "sifriya", pt: "biblioteca", es: "biblioteca", en: "library", it: "biblioteca", level: "medio", emoji: "📚" },
+      { he: "מנהל בית ספר", tr: "menahel beit sefer", pt: "diretor(a)", es: "director", en: "principal", it: "preside", level: "medio", emoji: "🧑‍💼" },
+      { he: "שאלה", tr: "she'ela", pt: "pergunta", es: "pregunta", en: "question", it: "domanda", level: "medio", emoji: "❓" },
+      { he: "תשובה", tr: "tshuva", pt: "resposta", es: "respuesta", en: "answer", it: "risposta", level: "medio", emoji: "✅" },
+      { he: "ללמוד", tr: "lilmod", pt: "aprender", es: "aprender", en: "to learn", it: "imparare", level: "medio", emoji: "🧠" },
+      { he: "ללמד", tr: "lelamed", pt: "ensinar", es: "enseñar", en: "to teach", it: "insegnare", level: "medio", emoji: "👩‍🏫" },
+      { he: "בחינה", tr: "bchina", pt: "exame final", es: "examen final", en: "final exam", it: "esame", level: "forte", emoji: "🎯" },
+      { he: "חופשה", tr: "chufsha", pt: "férias escolares", es: "vacaciones", en: "school break", it: "vacanze", level: "forte", emoji: "🌴" },
+      { he: "סרגל", tr: "sargel", pt: "régua", es: "regla", en: "ruler", it: "righello", level: "forte", emoji: "📏" },
+      { he: "אומנות", tr: "omanut", pt: "arte", es: "arte", en: "art", it: "arte", level: "forte", emoji: "🎨" },
+      { he: "חינוך גופני", tr: "chinuch gufani", pt: "educação física", es: "educación física", en: "physical education", it: "educazione fisica", level: "forte", emoji: "🏃" },
+      { he: "מוזיקה", tr: "musika", pt: "música (matéria)", es: "música", en: "music", it: "musica", level: "forte", emoji: "🎵" },
+      { he: "קריאה", tr: "kri'a", pt: "leitura", es: "lectura", en: "reading", it: "lettura", level: "forte", emoji: "📖" },
+      { he: "כתיבה", tr: "ktiva", pt: "escrita", es: "escritura", en: "writing", it: "scrittura", level: "forte", emoji: "✍️" },
+      { he: "חבר", tr: "chaver", pt: "amigo(a)", es: "amigo", en: "friend", it: "amico", level: "forte", emoji: "🧑‍🤝‍🧑" },
+      { he: "שכבה", tr: "shichva", pt: "turma", es: "grado", en: "class group", it: "classe", level: "forte", emoji: "👥" },
+      { he: "מחק", tr: "machak", pt: "apagador de quadro", es: "borrador", en: "board eraser", it: "cancellino", level: "forte", emoji: "🧹" },
+      { he: "קלמר", tr: "kalmar", pt: "estojo", es: "estuche", en: "pencil case", it: "astuccio", level: "forte", emoji: "🖍️" },
+      { he: "גיר", tr: "gir", pt: "giz", es: "tiza", en: "chalk", it: "gesso", level: "forte", emoji: "🖍️" },
+      { he: "פעמון", tr: "pa'amon", pt: "sino da escola", es: "timbre", en: "school bell", it: "campanella", level: "forte", emoji: "🔔" },
+    ],
+  },
+  {
+    id: "transporte",
+    name: "Transporte",
+    icon: "🚗",
+    nameLoc: { pt: "Transporte", en: "Transportation", es: "Transporte", it: "Trasporti" },
+    glyph: "ת",
+    nameHe: "תחבורה",
+    accent: "#C9622D",
+    words: [
+      { he: "מכונית", tr: "mechonit", pt: "carro", es: "coche", en: "car", it: "auto", level: "basico", emoji: "🚗" },
+      { he: "אוטובוס", tr: "otobus", pt: "ônibus", es: "autobús", en: "bus", it: "autobus", level: "basico", emoji: "🚌" },
+      { he: "רכבת", tr: "rakevet", pt: "trem", es: "tren", en: "train", it: "treno", level: "basico", emoji: "🚆" },
+      { he: "מטוס", tr: "matos", pt: "avião", es: "avión", en: "airplane", it: "aereo", level: "basico", emoji: "✈️" },
+      { he: "סירה", tr: "sira", pt: "barco", es: "barco", en: "boat", it: "barca", level: "basico", emoji: "🚤" },
+      { he: "אונייה", tr: "oniya", pt: "navio", es: "buque", en: "ship", it: "nave", level: "basico", emoji: "🚢" },
+      { he: "אופניים", tr: "ofanayim", pt: "bicicleta", es: "bicicleta", en: "bicycle", it: "bicicletta", level: "basico", emoji: "🚲" },
+      { he: "אופנוע", tr: "ofanoa", pt: "motocicleta", es: "motocicleta", en: "motorcycle", it: "motocicletta", level: "basico", emoji: "🏍️" },
+      { he: "מונית", tr: "monit", pt: "táxi", es: "taxi", en: "taxi", it: "taxi", level: "basico", emoji: "🚕" },
+      { he: "רכבת תחתית", tr: "rakevet tachtit", pt: "metrô", es: "metro", en: "subway", it: "metropolitana", level: "basico", emoji: "🚇" },
+      { he: "משאית", tr: "masait", pt: "caminhão", es: "camión", en: "truck", it: "camion", level: "basico", emoji: "🚚" },
+      { he: "אמבולנס", tr: "ambulans", pt: "ambulância", es: "ambulancia", en: "ambulance", it: "ambulanza", level: "medio", emoji: "🚑" },
+      { he: "מכונית כיבוי", tr: "mechonit kibuy", pt: "carro de bombeiros", es: "camión de bomberos", en: "fire truck", it: "autopompa", level: "medio", emoji: "🚒" },
+      { he: "מסוקית", tr: "masokit", pt: "helicóptero", es: "helicóptero", en: "helicopter", it: "elicottero", level: "medio", emoji: "🚁" },
+      { he: "כביש", tr: "kvish", pt: "estrada", es: "carretera", en: "road", it: "strada", level: "medio", emoji: "🛣️" },
+      { he: "רמזור", tr: "ramzor", pt: "semáforo", es: "semáforo", en: "traffic light", it: "semaforo", level: "medio", emoji: "🚦" },
+      { he: "שדה תעופה", tr: "sde te'ufa", pt: "aeroporto", es: "aeropuerto", en: "airport", it: "aeroporto", level: "medio", emoji: "🛫" },
+      { he: "תחנת רכבת", tr: "tachanat rakevet", pt: "estação de trem", es: "estación de tren", en: "train station", it: "stazione", level: "medio", emoji: "🚉" },
+      { he: "תחנת אוטובוס", tr: "tachanat otobus", pt: "ponto de ônibus", es: "parada de autobús", en: "bus stop", it: "fermata", level: "medio", emoji: "🚏" },
+      { he: "הגה", tr: "hege", pt: "volante", es: "volante", en: "steering wheel", it: "volante", level: "medio", emoji: "🚗" },
+      { he: "דלק", tr: "delek", pt: "gasolina", es: "gasolina", en: "fuel", it: "benzina", level: "medio", emoji: "⛽" },
+      { he: "נוסע", tr: "nose'a", pt: "passageiro", es: "pasajero", en: "passenger", it: "passeggero", level: "medio", emoji: "🧍" },
+      { he: "נהג", tr: "nahag", pt: "motorista", es: "conductor", en: "driver", it: "autista", level: "forte", emoji: "🧑‍✈️" },
+      { he: "כרטיס", tr: "kartis", pt: "passagem/bilhete", es: "boleto", en: "ticket", it: "biglietto", level: "forte", emoji: "🎫" },
+      { he: "חגורת בטיחות", tr: "chagorat betichut", pt: "cinto de segurança", es: "cinturón de seguridad", en: "seat belt", it: "cintura di sicurezza", level: "forte", emoji: "🔒" },
+      { he: "קסדה", tr: "kasda", pt: "capacete", es: "casco", en: "helmet", it: "casco", level: "forte", emoji: "⛑️" },
+      { he: "קורקינט", tr: "kore's", pt: "patinete", es: "patinete", en: "scooter", it: "monopattino", level: "forte", emoji: "🛴" },
+      { he: "כדור פורח", tr: "kadur po're'ach", pt: "balão de ar", es: "globo aerostático", en: "hot air balloon", it: "mongolfiera", level: "forte", emoji: "🎈" },
+      { he: "רקטה", tr: "raketa", pt: "foguete", es: "cohete", en: "rocket", it: "razzo", level: "forte", emoji: "🚀" },
+      { he: "עוגן", tr: "ogen", pt: "âncora", es: "ancla", en: "anchor", it: "ancora", level: "forte", emoji: "⚓" },
+      { he: "אגרה", tr: "agra", pt: "pedágio", es: "peaje", en: "toll", it: "pedaggio", level: "forte", emoji: "💰" },
+      { he: "מפה", tr: "mapa", pt: "mapa", es: "mapa", en: "map", it: "mappa", level: "forte", emoji: "🗺️" },
+      { he: "מטען", tr: "mit'an", pt: "bagagem", es: "equipaje", en: "luggage", it: "bagaglio", level: "forte", emoji: "🧳" },
+      { he: "דרכון", tr: "darkon", pt: "passaporte", es: "pasaporte", en: "passport", it: "passaporto", level: "forte", emoji: "🛂" },
+      { he: "נסיעה", tr: "nesi'a", pt: "viagem", es: "viaje", en: "trip", it: "viaggio", level: "forte", emoji: "🧭" },
+    ],
+  },
+  {
+    id: "lugares",
+    name: "Lugares",
+    icon: "🌍",
+    nameLoc: { pt: "Lugares", en: "Places", es: "Lugares", it: "Luoghi" },
+    glyph: "מ",
+    nameHe: "מקומות",
+    accent: "#4A6741",
+    words: [
+      { he: "עיר", tr: "ir", pt: "cidade", es: "ciudad", en: "city", it: "città", level: "basico", emoji: "🏙️" },
+      { he: "מדינה", tr: "medina", pt: "país", es: "país", en: "country", it: "paese", level: "basico", emoji: "🌍" },
+      { he: "בית חולים", tr: "beit cholim", pt: "hospital", es: "hospital", en: "hospital", it: "ospedale", level: "basico", emoji: "🏥" },
+      { he: "סופרמרקט", tr: "supermarket", pt: "supermercado", es: "supermercado", en: "supermarket", it: "supermercato", level: "basico", emoji: "🛒" },
+      { he: "מסעדה", tr: "mis'ada", pt: "restaurante", es: "restaurante", en: "restaurant", it: "ristorante", level: "basico", emoji: "🍽️" },
+      { he: "קניון", tr: "kanyon", pt: "shopping", es: "centro comercial", en: "mall", it: "centro commerciale", level: "basico", emoji: "🏬" },
+      { he: "בנק", tr: "bank", pt: "banco", es: "banco", en: "bank", it: "banca", level: "basico", emoji: "🏦" },
+      { he: "כנסייה", tr: "knesiya", pt: "igreja", es: "iglesia", en: "church", it: "chiesa", level: "basico", emoji: "⛪" },
+      { he: "בית כנסת", tr: "beit knesset", pt: "sinagoga", es: "sinagoga", en: "synagogue", it: "sinagoga", level: "basico", emoji: "🕍" },
+      { he: "מוזיאון", tr: "muzeon", pt: "museu", es: "museo", en: "museum", it: "museo", level: "basico", emoji: "🏛️" },
+      { he: "פארק", tr: "park", pt: "parque", es: "parque", en: "park", it: "parco", level: "basico", emoji: "🏞️" },
+      { he: "כיכר", tr: "kikar", pt: "praça", es: "plaza", en: "square", it: "piazza", level: "basico", emoji: "⛲" },
+      { he: "מלון", tr: "malon", pt: "hotel", es: "hotel", en: "hotel", it: "hotel", level: "basico", emoji: "🏨" },
+      { he: "גן חיות", tr: "gan chayot", pt: "zoológico", es: "zoológico", en: "zoo", it: "zoo", level: "medio", emoji: "🦁" },
+      { he: "קולנוע", tr: "kolno'a", pt: "cinema", es: "cine", en: "cinema", it: "cinema", level: "medio", emoji: "🎬" },
+      { he: "תיאטרון", tr: "te'atron", pt: "teatro", es: "teatro", en: "theater", it: "teatro", level: "medio", emoji: "🎭" },
+      { he: "בית מרקחת", tr: "beit mirkachat", pt: "farmácia", es: "farmacia", en: "pharmacy", it: "farmacia", level: "medio", emoji: "💊" },
+      { he: "מאפייה", tr: "ma'afiya", pt: "padaria", es: "panadería", en: "bakery", it: "panetteria", level: "medio", emoji: "🥖" },
+      { he: "דואר", tr: "do'ar", pt: "correio", es: "correos", en: "post office", it: "ufficio postale", level: "medio", emoji: "📮" },
+      { he: "תחנת משטרה", tr: "tachanat mishtara", pt: "delegacia de polícia", es: "comisaría", en: "police station", it: "stazione di polizia", level: "medio", emoji: "👮" },
+      { he: "תחנת כיבוי אש", tr: "tachanat kibuy esh", pt: "estação de bombeiros", es: "estación de bomberos", en: "fire station", it: "caserma dei pompieri", level: "medio", emoji: "🚒" },
+      { he: "אצטדיון", tr: "itztadion", pt: "estádio", es: "estadio", en: "stadium", it: "stadio", level: "medio", emoji: "🏟️" },
+      { he: "חוף ים", tr: "chof yam", pt: "praia", es: "playa", en: "beach", it: "spiaggia", level: "medio", emoji: "🏖️" },
+      { he: "חווה", tr: "chava", pt: "fazenda", es: "granja", en: "farm", it: "fattoria", level: "medio", emoji: "🚜" },
+      { he: "מפעל", tr: "masna", pt: "fábrica", es: "fábrica", en: "factory", it: "fabbrica", level: "medio", emoji: "🏭" },
+      { he: "אוניברסיטה", tr: "universita", pt: "universidade", es: "universidad", en: "university", it: "università", level: "medio", emoji: "🎓" },
+      { he: "שגרירות", tr: "shagrirut", pt: "embaixada", es: "embajada", en: "embassy", it: "ambasciata", level: "forte", emoji: "🏛️" },
+      { he: "רחוב", tr: "rechov", pt: "rua", es: "calle", en: "street", it: "strada", level: "forte", emoji: "🛤️" },
+      { he: "פינה", tr: "pina", pt: "esquina", es: "esquina", en: "corner", it: "angolo", level: "forte", emoji: "📍" },
+      { he: "גשר", tr: "gesher", pt: "ponte", es: "puente", en: "bridge", it: "ponte", level: "forte", emoji: "🌉" },
+      { he: "כפר", tr: "kfar", pt: "vila/povoado", es: "pueblo", en: "village", it: "villaggio", level: "forte", emoji: "🏘️" },
+      { he: "בירה", tr: "birah", pt: "capital", es: "capital", en: "capital city", it: "capitale", level: "forte", emoji: "🏛️" },
+      { he: "גבול", tr: "gvul", pt: "fronteira", es: "frontera", en: "border", it: "confine", level: "forte", emoji: "🚧" },
+      { he: "יבשת", tr: "yabeshet", pt: "continente", es: "continente", en: "continent", it: "continente", level: "forte", emoji: "🌎" },
+      { he: "אי", tr: "i", pt: "ilha", es: "isla", en: "island", it: "isola", level: "forte", emoji: "🏝️" },
+      { he: "טירה", tr: "tira", pt: "castelo", es: "castillo", en: "castle", it: "castello", level: "forte", emoji: "🏰" },
+      { he: "מגדל", tr: "migdal", pt: "torre", es: "torre", en: "tower", it: "torre", level: "forte", emoji: "🗼" },
+      { he: "חומה", tr: "choma", pt: "muralha", es: "muralla", en: "city wall", it: "muraglia", level: "forte", emoji: "🧱" },
+      { he: "שכונה", tr: "shchuna", pt: "bairro", es: "vecindario", en: "neighborhood", it: "vicinato", level: "forte", emoji: "🏘️" },
+      { he: "עולם", tr: "olam", pt: "mundo", es: "mundo", en: "world", it: "mondo", level: "forte", emoji: "🌍" },
+    ],
+  },
+  {
+    id: "objetos",
+    name: "Objetos",
+    icon: "🧰",
+    nameLoc: { pt: "Objetos do dia a dia", en: "Everyday objects", es: "Objetos cotidianos", it: "Oggetti quotidiani" },
+    glyph: "ח",
+    nameHe: "חפצים",
+    accent: "#6B4F8F",
+    words: [
+      { he: "טלפון", tr: "telefon", pt: "telefone", es: "teléfono", en: "phone", it: "telefono", level: "basico", emoji: "📱" },
+      { he: "מחשב", tr: "machshev", pt: "computador", es: "computadora", en: "computer", it: "computer", level: "basico", emoji: "💻" },
+      { he: "מפתח", tr: "mafte'ach", pt: "chave", es: "llave", en: "key", it: "chiave", level: "basico", emoji: "🔑" },
+      { he: "עט", tr: "et", pt: "caneta", es: "bolígrafo", en: "pen", it: "penna", level: "basico", emoji: "🖊️" },
+      { he: "ספר", tr: "sefer", pt: "livro", es: "libro", en: "book", it: "libro", level: "basico", emoji: "📖" },
+      { he: "משקפיים", tr: "mishkafayim", pt: "óculos", es: "gafas", en: "glasses", it: "occhiali", level: "basico", emoji: "👓" },
+      { he: "תיק גב", tr: "tik gav", pt: "mochila", es: "mochila", en: "backpack", it: "zaino", level: "basico", emoji: "🎒" },
+      { he: "בקבוק", tr: "bakbuk", pt: "garrafa", es: "botella", en: "bottle", it: "bottiglia", level: "basico", emoji: "🍾" },
+      { he: "נייר", tr: "niyar", pt: "papel", es: "papel", en: "paper", it: "carta", level: "basico", emoji: "📄" },
+      { he: "מברשת שיניים", tr: "mivreshet shinayim", pt: "escova de dentes", es: "cepillo de dientes", en: "toothbrush", it: "spazzolino", level: "basico", emoji: "🪥" },
+      { he: "סבון", tr: "sabon", pt: "sabonete", es: "jabón", en: "soap", it: "sapone", level: "basico", emoji: "🧼" },
+      { he: "מטרייה", tr: "mata", pt: "guarda-chuva", es: "paraguas", en: "umbrella", it: "ombrello", level: "basico", emoji: "☂️" },
+      { he: "נורה", tr: "nura", pt: "lâmpada", es: "bombilla", en: "light bulb", it: "lampadina", level: "basico", emoji: "💡" },
+      { he: "שקע", tr: "sheka", pt: "tomada", es: "enchufe", en: "electric outlet", it: "presa elettrica", level: "basico", emoji: "🔌" },
+      { he: "שעון", tr: "sha'on", pt: "relógio", es: "reloj", en: "watch", it: "orologio", level: "basico", emoji: "⌚" },
+      { he: "כסף", tr: "kesef", pt: "dinheiro", es: "dinero", en: "money", it: "denaro", level: "medio", emoji: "💰" },
+      { he: "מתנה", tr: "matana", pt: "presente", es: "regalo", en: "gift", it: "regalo", level: "medio", emoji: "🎁" },
+      { he: "מזוודה", tr: "mizvada", pt: "mala", es: "maleta", en: "suitcase", it: "valigia", level: "medio", emoji: "🧳" },
+      { he: "ארנק", tr: "arnak", pt: "carteira", es: "cartera", en: "wallet", it: "portafoglio", level: "medio", emoji: "👛" },
+      { he: "מספריים", tr: "misparayim", pt: "tesoura", es: "tijeras", en: "scissors", it: "forbici", level: "medio", emoji: "✂️" },
+      { he: "פטיש", tr: "patish", pt: "martelo", es: "martillo", en: "hammer", it: "martello", level: "medio", emoji: "🔨" },
+      { he: "מברג", tr: "mavreg", pt: "chave de fenda", es: "destornillador", en: "screwdriver", it: "cacciavite", level: "medio", emoji: "🪛" },
+      { he: "חבל", tr: "chevel", pt: "corda", es: "cuerda", en: "rope", it: "corda", level: "medio", emoji: "🪢" },
+      { he: "סלוטייפ", tr: "selotape", pt: "fita adesiva", es: "cinta adhesiva", en: "tape", it: "nastro adesivo", level: "medio", emoji: "📏" },
+      { he: "סוללה", tr: "solela", pt: "pilha", es: "pila", en: "battery", it: "batteria", level: "medio", emoji: "🔋" },
+      { he: "שלט רחוק", tr: "shlat rachok", pt: "controle remoto", es: "control remoto", en: "remote control", it: "telecomando", level: "medio", emoji: "🕹️" },
+      { he: "מטען", tr: "matein", pt: "carregador", es: "cargador", en: "charger", it: "caricabatterie", level: "medio", emoji: "🔌" },
+      { he: "אוזניות", tr: "ozniyot", pt: "fone de ouvido", es: "auriculares", en: "headphones", it: "cuffie", level: "medio", emoji: "🎧" },
+      { he: "מראה", tr: "mar'a", pt: "espelho", es: "espejo", en: "mirror", it: "specchio", level: "medio", emoji: "🪞" },
+      { he: "מברשת שיער", tr: "mivreshet se'ar", pt: "escova de cabelo", es: "cepillo de pelo", en: "hairbrush", it: "spazzola", level: "medio", emoji: "💇" },
+      { he: "מסרק", tr: "masrek", pt: "pente", es: "peine", en: "comb", it: "pettine", level: "forte", emoji: "🪮" },
+      { he: "ארון", tr: "aron", pt: "armário pequeno", es: "armario", en: "cabinet", it: "armadio", level: "forte", emoji: "🗄️" },
+      { he: "נר", tr: "ner", pt: "vela", es: "vela", en: "candle", it: "candela", level: "forte", emoji: "🕯️" },
+      { he: "גפרור", tr: "gafrur", pt: "fósforo", es: "cerilla", en: "match", it: "fiammifero", level: "forte", emoji: "🔥" },
+      { he: "מצית", tr: "matsit", pt: "isqueiro", es: "encendedor", en: "lighter", it: "accendino", level: "forte", emoji: "🔥" },
+      { he: "קופסה", tr: "kufsa", pt: "caixa", es: "caja", en: "box", it: "scatola", level: "forte", emoji: "📦" },
+      { he: "שקית", tr: "sakit", pt: "sacola", es: "bolsa", en: "bag", it: "sacchetto", level: "forte", emoji: "🛍️" },
+      { he: "דלי", tr: "dli", pt: "balde", es: "cubo", en: "bucket", it: "secchio", level: "forte", emoji: "🪣" },
+      { he: "מטאטא", tr: "matate", pt: "vassoura", es: "escoba", en: "broom", it: "scopa", level: "forte", emoji: "🧹" },
+      { he: "מטלית", tr: "matlit", pt: "pano", es: "trapo", en: "cloth", it: "straccio", level: "forte", emoji: "🧻" },
+      { he: "מנעול", tr: "man'ul", pt: "fechadura", es: "cerradura", en: "lock", it: "serratura", level: "forte", emoji: "🔒" },
+      { he: "מצפן", tr: "matspen", pt: "bússola", es: "brújula", en: "compass", it: "bussola", level: "forte", emoji: "🧭" },
+      { he: "פנס", tr: "panas", pt: "lanterna", es: "linterna", en: "flashlight", it: "torcia", level: "forte", emoji: "🔦" },
+      { he: "מחט", tr: "machat", pt: "agulha", es: "aguja", en: "needle", it: "ago", level: "forte", emoji: "🪡" },
+      { he: "נייר טואלט", tr: "niyar tualet", pt: "papel higiênico", es: "papel higiénico", en: "toilet paper", it: "carta igienica", level: "forte", emoji: "🧻" },
+      { he: "קרם", tr: "krem", pt: "creme", es: "crema", en: "cream/lotion", it: "crema", level: "forte", emoji: "🧴" },
+      { he: "מברשת", tr: "mivreshet", pt: "escova (geral)", es: "cepillo", en: "brush", it: "spazzola", level: "forte", emoji: "🧹" },
+    ],
+  },
+  {
+    id: "tempo",
+    name: "Tempo",
+    icon: "⏰",
+    nameLoc: { pt: "Tempo", en: "Time", es: "Tiempo", it: "Tempo" },
+    glyph: "ז",
+    nameHe: "זמן",
+    accent: "#8F5C4F",
+    words: [
+      { he: "היום", tr: "hayom", pt: "hoje", es: "hoy", en: "today", it: "oggi", level: "basico", emoji: "📍" },
+      { he: "מחר", tr: "machar", pt: "amanhã", es: "mañana", en: "tomorrow", it: "domani", level: "basico", emoji: "➡️" },
+      { he: "אתמול", tr: "etmol", pt: "ontem", es: "ayer", en: "yesterday", it: "ieri", level: "basico", emoji: "⬅️" },
+      { he: "בוקר", tr: "boker", pt: "manhã", es: "mañana", en: "morning", it: "mattina", level: "basico", emoji: "🌅" },
+      { he: "צהריים", tr: "tsohorayim", pt: "tarde", es: "tarde", en: "afternoon", it: "pomeriggio", level: "basico", emoji: "🌇" },
+      { he: "ערב", tr: "erev", pt: "noite (início)", es: "noche", en: "evening", it: "sera", level: "basico", emoji: "🌙" },
+      { he: "לילה", tr: "laila", pt: "madrugada/noite", es: "madrugada", en: "night", it: "notte", level: "basico", emoji: "🌃" },
+      { he: "שבוע", tr: "shavu'a", pt: "semana", es: "semana", en: "week", it: "settimana", level: "basico", emoji: "🗓️" },
+      { he: "חודש", tr: "chodesh", pt: "mês", es: "mes", en: "month", it: "mese", level: "basico", emoji: "📆" },
+      { he: "שנה", tr: "shana", pt: "ano", es: "año", en: "year", it: "anno", level: "basico", emoji: "📅" },
+      { he: "שעה", tr: "sha'a", pt: "hora", es: "hora", en: "hour", it: "ora", level: "basico", emoji: "⏰" },
+      { he: "דקה", tr: "daka", pt: "minuto", es: "minuto", en: "minute", it: "minuto", level: "medio", emoji: "⏱️" },
+      { he: "שנייה", tr: "shniya", pt: "segundo", es: "segundo", en: "second", it: "secondo", level: "medio", emoji: "⏲️" },
+      { he: "מוקדם", tr: "mukdam", pt: "cedo", es: "temprano", en: "early", it: "presto", level: "medio", emoji: "🌄" },
+      { he: "מאוחר", tr: "me'uchar", pt: "tarde (atraso)", es: "tarde", en: "late", it: "tardi", level: "medio", emoji: "⏰" },
+      { he: "עכשיו", tr: "achshav", pt: "agora", es: "ahora", en: "now", it: "adesso", level: "medio", emoji: "⏳" },
+      { he: "אחר כך", tr: "achar kach", pt: "depois", es: "después", en: "after", it: "dopo", level: "medio", emoji: "➡️" },
+      { he: "לפני", tr: "lifney", pt: "antes", es: "antes", en: "before", it: "prima", level: "medio", emoji: "⬅️" },
+      { he: "תמיד", tr: "tamid", pt: "sempre", es: "siempre", en: "always", it: "sempre", level: "medio", emoji: "♾️" },
+      { he: "אף פעם", tr: "af pa'am", pt: "nunca", es: "nunca", en: "never", it: "mai", level: "medio", emoji: "🚫" },
+      { he: "לפעמים", tr: "lif'amim", pt: "às vezes", es: "a veces", en: "sometimes", it: "a volte", level: "medio", emoji: "🔁" },
+      { he: "יום ראשון", tr: "yom rishon", pt: "domingo", es: "domingo", en: "Sunday", it: "domenica", level: "medio", emoji: "📅" },
+      { he: "יום שני", tr: "yom sheni", pt: "segunda-feira", es: "lunes", en: "Monday", it: "lunedì", level: "forte", emoji: "📅" },
+      { he: "יום שלישי", tr: "yom shlishi", pt: "terça-feira", es: "martes", en: "Tuesday", it: "martedì", level: "forte", emoji: "📅" },
+      { he: "יום רביעי", tr: "yom revi'i", pt: "quarta-feira", es: "miércoles", en: "Wednesday", it: "mercoledì", level: "forte", emoji: "📅" },
+      { he: "יום חמישי", tr: "yom chamishi", pt: "quinta-feira", es: "jueves", en: "Thursday", it: "giovedì", level: "forte", emoji: "📅" },
+      { he: "יום שישי", tr: "yom shishi", pt: "sexta-feira", es: "viernes", en: "Friday", it: "venerdì", level: "forte", emoji: "📅" },
+      { he: "שבת", tr: "shabat", pt: "sábado", es: "sábado", en: "Saturday", it: "sabato", level: "forte", emoji: "📅" },
+      { he: "קיץ", tr: "kayits", pt: "verão", es: "verano", en: "summer", it: "estate", level: "forte", emoji: "☀️" },
+      { he: "חורף", tr: "choref", pt: "inverno", es: "invierno", en: "winter", it: "inverno", level: "forte", emoji: "❄️" },
+      { he: "אביב", tr: "aviv", pt: "primavera", es: "primavera", en: "spring", it: "primavera", level: "forte", emoji: "🌸" },
+      { he: "סתיו", tr: "stav", pt: "outono", es: "otoño", en: "autumn", it: "autunno", level: "forte", emoji: "🍂" },
+      { he: "לוח שנה", tr: "luach shana", pt: "calendário", es: "calendario", en: "calendar", it: "calendario", level: "forte", emoji: "📅" },
+      { he: "שעון", tr: "sha'on", pt: "relógio", es: "reloj", en: "clock", it: "orologio", level: "forte", emoji: "🕐" },
+      { he: "חג", tr: "chag", pt: "feriado", es: "día festivo", en: "holiday", it: "festività", level: "forte", emoji: "🎉" },
+    ],
+  },
+  {
+    id: "natureza",
+    name: "Natureza",
+    icon: "🌿",
+    nameLoc: { pt: "Natureza", en: "Nature", es: "Naturaleza", it: "Natura" },
+    glyph: "ט",
+    nameHe: "טבע",
+    accent: "#2F7A5C",
+    words: [
+      { he: "שמש", tr: "shemesh", pt: "sol", es: "sol", en: "sun", it: "sole", level: "basico", emoji: "☀️" },
+      { he: "ירח", tr: "yareach", pt: "lua", es: "luna", en: "moon", it: "luna", level: "basico", emoji: "🌙" },
+      { he: "כוכב", tr: "kochav", pt: "estrela", es: "estrella", en: "star", it: "stella", level: "basico", emoji: "⭐" },
+      { he: "שמיים", tr: "shamayim", pt: "céu", es: "cielo", en: "sky", it: "cielo", level: "basico", emoji: "🌌" },
+      { he: "ענן", tr: "anan", pt: "nuvem", es: "nube", en: "cloud", it: "nuvola", level: "basico", emoji: "☁️" },
+      { he: "גשם", tr: "geshem", pt: "chuva", es: "lluvia", en: "rain", it: "pioggia", level: "basico", emoji: "🌧️" },
+      { he: "רוח", tr: "ru'ach", pt: "vento", es: "viento", en: "wind", it: "vento", level: "basico", emoji: "🌬️" },
+      { he: "עץ", tr: "ets", pt: "árvore", es: "árbol", en: "tree", it: "albero", level: "basico", emoji: "🌳" },
+      { he: "פרח", tr: "perach", pt: "flor", es: "flor", en: "flower", it: "fiore", level: "basico", emoji: "🌸" },
+      { he: "ים", tr: "yam", pt: "mar", es: "mar", en: "sea", it: "mare", level: "basico", emoji: "🌊" },
+      { he: "הר", tr: "har", pt: "montanha", es: "montaña", en: "mountain", it: "montagna", level: "basico", emoji: "⛰️" },
+      { he: "נהר", tr: "nahar", pt: "rio", es: "río", en: "river", it: "fiume", level: "basico", emoji: "🏞️" },
+      { he: "אגם", tr: "agam", pt: "lago", es: "lago", en: "lake", it: "lago", level: "basico", emoji: "🏞️" },
+      { he: "יער", tr: "ya'ar", pt: "floresta", es: "bosque", en: "forest", it: "foresta", level: "medio", emoji: "🌲" },
+      { he: "מדבר", tr: "midbar", pt: "deserto", es: "desierto", en: "desert", it: "deserto", level: "medio", emoji: "🏜️" },
+      { he: "חול", tr: "chol", pt: "areia", es: "arena", en: "sand", it: "sabbia", level: "medio", emoji: "🏖️" },
+      { he: "אבן", tr: "even", pt: "pedra", es: "piedra", en: "stone", it: "pietra", level: "medio", emoji: "🪨" },
+      { he: "עלה", tr: "ale", pt: "folha", es: "hoja", en: "leaf", it: "foglia", level: "medio", emoji: "🍃" },
+      { he: "דשא", tr: "deshe", pt: "grama", es: "hierba", en: "grass", it: "erba", level: "medio", emoji: "🌱" },
+      { he: "אדמה", tr: "adama", pt: "terra", es: "tierra", en: "earth/soil", it: "terra", level: "medio", emoji: "🌍" },
+      { he: "ברק", tr: "barak", pt: "relâmpago", es: "relámpago", en: "lightning", it: "fulmine", level: "medio", emoji: "⚡" },
+      { he: "רעם", tr: "ra'am", pt: "trovão", es: "trueno", en: "thunder", it: "tuono", level: "medio", emoji: "⛈️" },
+      { he: "קשת", tr: "keshet", pt: "arco-íris", es: "arcoíris", en: "rainbow", it: "arcobaleno", level: "medio", emoji: "🌈" },
+      { he: "שלג", tr: "sheleg", pt: "neve", es: "nieve", en: "snow", it: "neve", level: "medio", emoji: "❄️" },
+      { he: "קרח", tr: "kerach", pt: "gelo", es: "hielo", en: "ice", it: "ghiaccio", level: "medio", emoji: "🧊" },
+      { he: "הר געש", tr: "har ga'ash", pt: "vulcão", es: "volcán", en: "volcano", it: "vulcano", level: "medio", emoji: "🌋" },
+      { he: "מפל מים", tr: "mapal mayim", pt: "cachoeira", es: "cascada", en: "waterfall", it: "cascata", level: "forte", emoji: "💦" },
+      { he: "אי", tr: "i", pt: "ilha", es: "isla", en: "island", it: "isola", level: "forte", emoji: "🏝️" },
+      { he: "חוף", tr: "chof", pt: "praia", es: "playa", en: "beach", it: "spiaggia", level: "forte", emoji: "🏖️" },
+      { he: "שורש", tr: "shoresh", pt: "raiz", es: "raíz", en: "root", it: "radice", level: "forte", emoji: "🪴" },
+      { he: "אש", tr: "esh", pt: "fogo", es: "fuego", en: "fire", it: "fuoco", level: "forte", emoji: "🔥" },
+      { he: "מים", tr: "mayim", pt: "água", es: "agua", en: "water", it: "acqua", level: "forte", emoji: "💧" },
+      { he: "צמח", tr: "tsemach", pt: "planta", es: "planta", en: "plant", it: "pianta", level: "forte", emoji: "🪴" },
+      { he: "ערפל", tr: "arafel", pt: "neblina", es: "niebla", en: "fog", it: "nebbia", level: "forte", emoji: "🌫️" },
+      { he: "סערה", tr: "se'ara", pt: "tempestade", es: "tormenta", en: "storm", it: "tempesta", level: "forte", emoji: "🌪️" },
+      { he: "רעידת אדמה", tr: "re'idat adama", pt: "terremoto", es: "terremoto", en: "earthquake", it: "terremoto", level: "forte", emoji: "🌎" },
+      { he: "גל", tr: "gal", pt: "onda", es: "ola", en: "wave", it: "onda", level: "forte", emoji: "🌊" },
+      { he: "ענף", tr: "anaf", pt: "galho", es: "rama", en: "branch", it: "ramo", level: "forte", emoji: "🌿" },
+      { he: "זרע", tr: "zera", pt: "semente", es: "semilla", en: "seed", it: "seme", level: "forte", emoji: "🌰" },
+      { he: "טל", tr: "tal", pt: "orvalho", es: "rocío", en: "dew", it: "rugiada", level: "forte", emoji: "💧" },
+    ],
+  },
+];
+
+const CATEGORY_MAP = Object.fromEntries(CATEGORIES.map((c) => [c.id, c]));
+
+/* ---------------------------------------------------------
+   Idiomas e textos da interface
+--------------------------------------------------------- */
+const LANGUAGES = [
+  { code: "pt", label: "Português", flag: "🇧🇷" },
+  { code: "en", label: "English", flag: "🇺🇸" },
+  { code: "es", label: "Español", flag: "🇦🇷🇺🇾" },
+  { code: "it", label: "Italiano", flag: "🇮🇹" },
+];
+
+const STRINGS = {
+  pt: {
+    past: "passado",
+    present: "presente",
+    future: "futuro",
+    feminine: "feminino",
+    masculine: "masculino",
+    howManyQuestions: "quantas perguntas",
+    appSubtitle: "Aprender hebraico · cartas por assunto",
+    chooseLanguageTitle: "Escolha o idioma",
+    chooseLanguageSubtitle: "Em que idioma você quer estudar?",
+    changeLanguage: "idioma",
+    studied: "estudadas",
+    cardOf: "carta {n} de {total}",
+    tapToFlip: "toque para virar · deslize para trocar",
+    startQuiz: "Iniciar quiz",
+    backToFolders: "pastas",
+    quizQuestionOf: "pergunta {n} de {total}",
+    points: "pontos",
+    whatIsMeaning: "Qual é o significado?",
+    resultTitle: "Resultado do quiz",
+    bestResult: "melhor resultado",
+    redoQuiz: "Refazer quiz",
+    backToCards: "voltar às cartas",
+    exitQuiz: "sair do quiz",
+    nextQuestion: "Próxima pergunta →",
+    seeResult: "Ver resultado",
+    combinedQuizBtn: "Quiz combinado",
+    combinedQuizTitle: "Quiz combinado",
+    combinedQuizSubtitle: "Selecione as pastas que quer treinar juntas (máx. 25 palavras por quiz)",
+    selectAll: "selecionar todas",
+    clearAll: "limpar seleção",
+    startCombinedQuiz: "Iniciar quiz combinado",
+    selectAtLeastOne: "Selecione ao menos uma pasta",
+    wordsAvailable: "palavras",
+    combinedQuizHeader: "Quiz combinado",
+    backToHome: "início",
+  },
+  en: {
+    past: "past",
+    present: "present",
+    future: "future",
+    feminine: "feminine",
+    masculine: "masculine",
+    howManyQuestions: "how many questions",
+    appSubtitle: "Learn Hebrew · flashcards by topic",
+    chooseLanguageTitle: "Choose your language",
+    chooseLanguageSubtitle: "Which language do you want to study in?",
+    changeLanguage: "language",
+    studied: "studied",
+    cardOf: "card {n} of {total}",
+    tapToFlip: "tap to flip · swipe to change",
+    startQuiz: "Start quiz",
+    backToFolders: "folders",
+    quizQuestionOf: "question {n} of {total}",
+    points: "points",
+    whatIsMeaning: "What's the meaning?",
+    resultTitle: "Quiz result",
+    bestResult: "best result",
+    redoQuiz: "Retake quiz",
+    backToCards: "back to cards",
+    exitQuiz: "exit quiz",
+    nextQuestion: "Next question →",
+    seeResult: "See result",
+    combinedQuizBtn: "Combined quiz",
+    combinedQuizTitle: "Combined quiz",
+    combinedQuizSubtitle: "Select the folders to train together (max 25 words per quiz)",
+    selectAll: "select all",
+    clearAll: "clear selection",
+    startCombinedQuiz: "Start combined quiz",
+    selectAtLeastOne: "Select at least one folder",
+    wordsAvailable: "words",
+    combinedQuizHeader: "Combined quiz",
+    backToHome: "home",
+  },
+  es: {
+    past: "pasado",
+    present: "presente",
+    future: "futuro",
+    feminine: "femenino",
+    masculine: "masculino",
+    howManyQuestions: "cuántas preguntas",
+    appSubtitle: "Aprender hebreo · tarjetas por tema",
+    chooseLanguageTitle: "Elige el idioma",
+    chooseLanguageSubtitle: "¿En qué idioma quieres estudiar?",
+    changeLanguage: "idioma",
+    studied: "estudiadas",
+    cardOf: "tarjeta {n} de {total}",
+    tapToFlip: "toca para voltear · desliza para cambiar",
+    startQuiz: "Iniciar quiz",
+    backToFolders: "carpetas",
+    quizQuestionOf: "pregunta {n} de {total}",
+    points: "puntos",
+    whatIsMeaning: "¿Cuál es el significado?",
+    resultTitle: "Resultado del quiz",
+    bestResult: "mejor resultado",
+    redoQuiz: "Repetir quiz",
+    backToCards: "volver a las tarjetas",
+    exitQuiz: "salir del quiz",
+    nextQuestion: "Siguiente pregunta →",
+    seeResult: "Ver resultado",
+    combinedQuizBtn: "Quiz combinado",
+    combinedQuizTitle: "Quiz combinado",
+    combinedQuizSubtitle: "Selecciona las carpetas para entrenar juntas (máx. 25 palabras por quiz)",
+    selectAll: "seleccionar todas",
+    clearAll: "limpiar selección",
+    startCombinedQuiz: "Iniciar quiz combinado",
+    selectAtLeastOne: "Selecciona al menos una carpeta",
+    wordsAvailable: "palabras",
+    combinedQuizHeader: "Quiz combinado",
+    backToHome: "inicio",
+  },
+  it: {
+    past: "passato",
+    present: "presente",
+    future: "futuro",
+    feminine: "femminile",
+    masculine: "maschile",
+    howManyQuestions: "quante domande",
+    appSubtitle: "Imparare l'ebraico · carte per argomento",
+    chooseLanguageTitle: "Scegli la lingua",
+    chooseLanguageSubtitle: "In quale lingua vuoi studiare?",
+    changeLanguage: "lingua",
+    studied: "studiate",
+    cardOf: "carta {n} di {total}",
+    tapToFlip: "tocca per girare · scorri per cambiare",
+    startQuiz: "Inizia quiz",
+    backToFolders: "cartelle",
+    quizQuestionOf: "domanda {n} di {total}",
+    points: "punti",
+    whatIsMeaning: "Qual è il significato?",
+    resultTitle: "Risultato del quiz",
+    bestResult: "miglior risultato",
+    redoQuiz: "Rifai il quiz",
+    backToCards: "torna alle carte",
+    exitQuiz: "esci dal quiz",
+    nextQuestion: "Prossima domanda →",
+    seeResult: "Vedi risultato",
+    combinedQuizBtn: "Quiz combinato",
+    combinedQuizTitle: "Quiz combinato",
+    combinedQuizSubtitle: "Seleziona le cartelle da allenare insieme (max 25 parole per quiz)",
+    selectAll: "seleziona tutte",
+    clearAll: "cancella selezione",
+    startCombinedQuiz: "Inizia quiz combinato",
+    selectAtLeastOne: "Seleziona almeno una cartella",
+    wordsAvailable: "parole",
+    combinedQuizHeader: "Quiz combinato",
+    backToHome: "home",
+  },
+};
+
+function t(lang, key, vars) {
+  let str = (STRINGS[lang] && STRINGS[lang][key]) || STRINGS.pt[key] || key;
+  if (vars) {
+    Object.keys(vars).forEach((k) => {
+      str = str.replace(`{${k}}`, vars[k]);
+    });
+  }
+  return str;
+}
+
+// Adapta a transliteração (que usa "ch" para o som gutural do chet/khaf)
+// para a grafia mais natural de leitura em cada idioma.
+function localizeTr(tr, lang) {
+  if (!tr) return tr;
+  switch (lang) {
+    case "pt":
+      return tr.replace(/ch/g, "rr");
+    case "es":
+      return tr.replace(/ch/g, "j");
+    case "en":
+    case "it":
+      return tr.replace(/ch/g, "kh");
+    default:
+      return tr;
+  }
+}
+
+const MIN_QUIZ_WORDS = 5;
+const MAX_QUIZ_WORDS_LIMIT = 50;
+const DEFAULT_QUIZ_WORDS = 25;
+
+/* ---------------------------------------------------------
+   Utilidades
+--------------------------------------------------------- */
+function shuffle(arr) {
+  const a = [...arr];
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [a[i], a[j]] = [a[j], a[i]];
+  }
+  return a;
+}
+
+function buildQuiz(category, lang, count) {
+  const maxWords = count || DEFAULT_QUIZ_WORDS;
+  const pool = shuffle(category.words).slice(0, maxWords);
+  const items = pool.map((w) => {
+    const distractors = shuffle(
+      category.words.filter((o) => o[lang] !== w[lang])
+    ).slice(0, 3);
+    const options = shuffle([w[lang], ...distractors.map((d) => d[lang])]);
+    return { word: w, options, correct: w[lang], categoryId: category.id };
+  });
+  return items;
+}
+
+// Monta um quiz combinando várias pastas, alternando entre elas (round-robin),
+// limitado à quantidade de perguntas escolhida pelo usuário.
+function buildCombinedQuiz(categoryIds, lang, count) {
+  const maxWords = count || DEFAULT_QUIZ_WORDS;
+  const cats = categoryIds.map((id) => CATEGORY_MAP[id]).filter(Boolean);
+  const pools = cats.map((c) => ({
+    catId: c.id,
+    accent: c.accent,
+    words: shuffle(c.words),
+  }));
+  const result = [];
+  let round = 0;
+  while (result.length < maxWords) {
+    let addedAny = false;
+    for (const pool of pools) {
+      if (result.length >= maxWords) break;
+      const w = pool.words[round];
+      if (!w) continue;
+      addedAny = true;
+      const cat = CATEGORY_MAP[pool.catId];
+      const distractors = shuffle(
+        cat.words.filter((o) => o[lang] !== w[lang])
+      ).slice(0, 3);
+      const options = shuffle([w[lang], ...distractors.map((d) => d[lang])]);
+      result.push({ word: w, options, correct: w[lang], categoryId: pool.catId, accent: cat.accent });
+    }
+    round += 1;
+    if (!addedAny) break;
+  }
+  return result;
+}
+
+/* ---------------------------------------------------------
+   Persistência (window.storage)
+--------------------------------------------------------- */
+function defaultProgress() {
+  return Object.fromEntries(
+    CATEGORIES.map((c) => [c.id, { studied: new Set(), quizBest: null }])
+  );
+}
+
+function withTimeout(promise, ms) {
+  return Promise.race([
+    promise,
+    new Promise((resolve) => setTimeout(() => resolve(null), ms)),
+  ]);
+}
+
+async function loadOneCategoryProgress(catId) {
+  try {
+    if (!window.storage || typeof window.storage.get !== "function") {
+      return { studied: new Set(), quizBest: null };
+    }
+    const res = await withTimeout(window.storage.get(`progress:${catId}`, false), 4000);
+    if (res && res.value) {
+      const parsed = JSON.parse(res.value);
+      return {
+        studied: new Set(parsed.studied || []),
+        quizBest: parsed.quizBest || null,
+      };
+    }
+    return { studied: new Set(), quizBest: null };
+  } catch (e) {
+    return { studied: new Set(), quizBest: null };
+  }
+}
+
+async function saveProgress(categoryId, progressForCat) {
+  try {
+    if (!window.storage || typeof window.storage.set !== "function") return;
+    await window.storage.set(
+      `progress:${categoryId}`,
+      JSON.stringify({
+        studied: Array.from(progressForCat.studied),
+        quizBest: progressForCat.quizBest,
+      }),
+      false
+    );
+  } catch (e) {
+    console.error("Erro ao salvar progresso", e);
+  }
+}
+
+async function loadLanguage() {
+  try {
+    if (!window.storage || typeof window.storage.get !== "function") return null;
+    const res = await withTimeout(window.storage.get("settings:lang", false), 3000);
+    if (res && res.value) return res.value;
+    return null;
+  } catch (e) {
+    return null;
+  }
+}
+
+async function saveLanguage(lang) {
+  try {
+    if (!window.storage || typeof window.storage.set !== "function") return;
+    await window.storage.set("settings:lang", lang, false);
+  } catch (e) {
+    console.error("Erro ao salvar idioma", e);
+  }
+}
+
+/* ---------------------------------------------------------
+   App
+--------------------------------------------------------- */
+function App() {
+  const [lang, setLang] = useState(null); // null = ainda não escolhido / carregando
+  const [view, setView] = useState("categories"); // categories | cards | quiz | quizBuilder
+  const [openCatId, setOpenCatId] = useState(null);
+  const [flipped, setFlipped] = useState({});
+  const [deckIndex, setDeckIndex] = useState({}); // categoryId -> index atual no baralho
+  const [progress, setProgress] = useState(defaultProgress);
+  const [syncing, setSyncing] = useState(true);
+  const [quiz, setQuiz] = useState(null);
+  const [quizBuilderSelection, setQuizBuilderSelection] = useState([]);
+  const [quizCount, setQuizCount] = useState(DEFAULT_QUIZ_WORDS);
+
+  useEffect(() => {
+    let mounted = true;
+    Promise.all([
+      loadLanguage(),
+      Promise.all(CATEGORIES.map((c) => loadOneCategoryProgress(c.id).then((p) => [c.id, p]))),
+    ])
+      .then(([savedLang, pairs]) => {
+        if (!mounted) return;
+        setProgress((prev) => {
+          const next = { ...prev };
+          for (const [id, p] of pairs) next[id] = p;
+          return next;
+        });
+        setLang(savedLang || "__choose__");
+      })
+      .catch(() => {
+        if (mounted) setLang("__choose__");
+      })
+      .finally(() => {
+        if (mounted) setSyncing(false);
+      });
+    return () => {
+      mounted = false;
+    };
+  }, []);
+
+  const chooseLanguage = (code) => {
+    setLang(code);
+    saveLanguage(code);
+  };
+
+  const markStudied = useCallback((categoryId, index) => {
+    setProgress((prev) => {
+      if (!prev) return prev;
+      const catProg = prev[categoryId] || { studied: new Set(), quizBest: null };
+      if (catProg.studied.has(index)) return prev;
+      const nextSet = new Set(catProg.studied);
+      nextSet.add(index);
+      const nextCatProg = { ...catProg, studied: nextSet };
+      const next = { ...prev, [categoryId]: nextCatProg };
+      saveProgress(categoryId, nextCatProg);
+      return next;
+    });
+  }, []);
+
+  const saveQuizResult = useCallback((categoryId, score, total) => {
+    setProgress((prev) => {
+      if (!prev) return prev;
+      const catProg = prev[categoryId] || { studied: new Set(), quizBest: null };
+      const prevBest = catProg.quizBest;
+      const isBetter = !prevBest || score / total > prevBest.score / prevBest.total;
+      const nextBest = isBetter ? { score, total } : prevBest;
+      const nextCatProg = { ...catProg, quizBest: nextBest };
+      const next = { ...prev, [categoryId]: nextCatProg };
+      saveProgress(categoryId, nextCatProg);
+      return next;
+    });
+  }, []);
+
+  const toggleFlip = (key, categoryId, index) => {
+    setFlipped((f) => {
+      const nowFlipped = !f[key];
+      if (nowFlipped) markStudied(categoryId, index);
+      return { ...f, [key]: nowFlipped };
+    });
+  };
+
+  const openCategory = (id) => {
+    setOpenCatId(id);
+    setView("cards");
+  };
+
+  const startQuiz = (id, count) => {
+    const cat = CATEGORY_MAP[id];
+    const n = count || quizCount;
+    setQuiz({
+      mode: "single",
+      categoryId: id,
+      count: n,
+      items: buildQuiz(cat, lang, n),
+      index: 0,
+      score: 0,
+      selected: null,
+      finished: false,
+    });
+    setView("quiz");
+  };
+
+  const startCombinedQuiz = () => {
+    if (quizBuilderSelection.length === 0) return;
+    setQuiz({
+      mode: "combined",
+      categoryIds: quizBuilderSelection,
+      count: quizCount,
+      items: buildCombinedQuiz(quizBuilderSelection, lang, quizCount),
+      index: 0,
+      score: 0,
+      selected: null,
+      finished: false,
+    });
+    setView("quiz");
+  };
+
+  const category = openCatId ? CATEGORY_MAP[openCatId] : null;
+  const strings = lang && lang !== "__choose__" ? lang : "pt";
+
+  if (lang === null) {
+    return <div style={styles.page} />;
+  }
+
+  return (
+    <div style={styles.page}>
+      <style>{GLOBAL_CSS}</style>
+
+      {syncing && <div style={styles.syncBadge}>…</div>}
+
+      {lang === "__choose__" ? (
+        <LanguageSelect onChoose={chooseLanguage} />
+      ) : view === "categories" ? (
+        <CategoryGrid
+          lang={lang}
+          onOpen={openCategory}
+          progress={progress}
+          onChangeLanguage={() => setLang("__choose__")}
+          onOpenQuizBuilder={() => {
+            setQuizBuilderSelection([]);
+            setView("quizBuilder");
+          }}
+        />
+      ) : view === "quizBuilder" ? (
+        <QuizBuilder
+          lang={lang}
+          selection={quizBuilderSelection}
+          setSelection={setQuizBuilderSelection}
+          onBack={() => setView("categories")}
+          onStart={startCombinedQuiz}
+          quizCount={quizCount}
+          setQuizCount={setQuizCount}
+        />
+      ) : view === "cards" ? (
+        <CardDeck
+          lang={lang}
+          category={category}
+          flipped={flipped}
+          toggleFlip={toggleFlip}
+          deckIndex={deckIndex[category.id] || 0}
+          setDeckIndexForCat={(i) =>
+            setDeckIndex((prev) => ({ ...prev, [category.id]: i }))
+          }
+          onBack={() => setView("categories")}
+          onQuiz={() => startQuiz(category.id, quizCount)}
+          quizCount={quizCount}
+          setQuizCount={setQuizCount}
+          studied={progress[category.id]?.studied || new Set()}
+        />
+      ) : (
+        <QuizView
+          lang={lang}
+          quiz={quiz}
+          setQuiz={setQuiz}
+          onFinish={(score, total) => {
+            if (quiz.mode === "single") saveQuizResult(quiz.categoryId, score, total);
+          }}
+          onExit={() => setView(quiz && quiz.mode === "combined" ? "categories" : "cards")}
+          bestScore={
+            quiz && quiz.mode === "single" ? progress[quiz.categoryId]?.quizBest : null
+          }
+        />
+      )}
+    </div>
+  );
+}
+
+/* ---------------------------------------------------------
+   Tela: escolher idioma
+--------------------------------------------------------- */
+function LanguageSelect({ onChoose }) {
+  return (
+    <div style={styles.langWrap}>
+      <div style={styles.headerGlyph}>א</div>
+      <h1 style={styles.langTitle}>Choose your language</h1>
+      <p style={styles.langSubtitle}>Escolha o idioma · Elige el idioma · Scegli la lingua</p>
+      <div style={styles.langGrid}>
+        {LANGUAGES.map((l) => (
+          <button key={l.code} style={styles.langBtn} onClick={() => onChoose(l.code)}>
+            <span style={styles.langFlag}>{l.flag}</span>
+            <span style={styles.langLabel}>{l.label}</span>
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/* ---------------------------------------------------------
+   Tela: grade de categorias (pastas)
+--------------------------------------------------------- */
+function CategoryGrid({ lang, onOpen, progress, onChangeLanguage, onOpenQuizBuilder }) {
+  return (
+    <div style={styles.container}>
+      <header style={styles.header}>
+        <div style={styles.headerTopRow}>
+          <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
+            <div style={styles.headerGlyph}>א</div>
+            <div>
+              <h1 style={styles.title}>לוֹמְדִים עִבְרִית</h1>
+              <p style={styles.subtitle}>{t(lang, "appSubtitle")}</p>
+            </div>
+          </div>
+          <button style={styles.langChip} onClick={onChangeLanguage}>
+            {LANGUAGES.find((l) => l.code === lang)?.flag} {t(lang, "changeLanguage")}
+          </button>
+        </div>
+        <button className="action-btn" style={styles.combinedQuizBtn} onClick={onOpenQuizBuilder}>
+          🎲 {t(lang, "combinedQuizBtn")}
+        </button>
+      </header>
+
+      <div style={styles.grid}>
+        {CATEGORIES.map((c, i) => {
+          const studiedCount = progress[c.id]?.studied?.size || 0;
+          const pct = Math.round((studiedCount / c.words.length) * 100);
+          const best = progress[c.id]?.quizBest;
+          return (
+            <button
+              key={c.id}
+              className="cat-tile"
+              onClick={() => onOpen(c.id)}
+              style={{ ...styles.catTile, borderColor: c.accent }}
+            >
+              <span style={styles.catIcon}>{c.icon}</span>
+              <span style={{ ...styles.catGlyph, color: c.accent }}>{c.nameHe}</span>
+              <span style={styles.catIndex}>{String(i + 1).padStart(2, "0")}</span>
+              <span style={styles.catName}>{c.nameLoc[lang] || c.nameLoc.pt}</span>
+              <span style={styles.catCount}>
+                {studiedCount}/{c.words.length} {t(lang, "studied")}
+              </span>
+              <div style={styles.progressTrack}>
+                <div style={{ ...styles.progressFill, width: `${pct}%`, background: c.accent }} />
+              </div>
+              {best && (
+                <span style={{ ...styles.quizBadge, color: c.accent, borderColor: c.accent }}>
+                  quiz: {best.score}/{best.total}
+                </span>
+              )}
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+/* ---------------------------------------------------------
+   Tela: montar quiz combinado (seleção de pastas)
+--------------------------------------------------------- */
+function QuizBuilder({ lang, selection, setSelection, onBack, onStart, quizCount, setQuizCount }) {
+  const toggle = (id) => {
+    setSelection((prev) =>
+      prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]
+    );
+  };
+
+  const totalAvailable = selection.reduce(
+    (sum, id) => sum + (CATEGORY_MAP[id]?.words.length || 0),
+    0
+  );
+  const totalWords = Math.min(quizCount, totalAvailable);
+
+  return (
+    <div style={styles.container}>
+      <header style={styles.header}>
+        <button className="back-btn" onClick={onBack} style={styles.backBtn}>
+          &larr; {t(lang, "backToHome")}
+        </button>
+        <h1 style={{ ...styles.title, fontSize: 26, marginTop: 10 }}>
+          🎲 {t(lang, "combinedQuizTitle")}
+        </h1>
+        <p style={styles.subtitle}>{t(lang, "combinedQuizSubtitle")}</p>
+      </header>
+
+      <div style={styles.builderActions}>
+        <button
+          className="back-btn"
+          style={styles.builderLinkBtn}
+          onClick={() => setSelection(CATEGORIES.map((c) => c.id))}
+        >
+          {t(lang, "selectAll")}
+        </button>
+        <button className="back-btn" style={styles.builderLinkBtn} onClick={() => setSelection([])}>
+          {t(lang, "clearAll")}
+        </button>
+      </div>
+
+      <div style={styles.grid}>
+        {CATEGORIES.map((c, i) => {
+          const isSelected = selection.includes(c.id);
+          return (
+            <button
+              key={c.id}
+              className="cat-tile"
+              onClick={() => toggle(c.id)}
+              style={{
+                ...styles.catTile,
+                borderColor: c.accent,
+                boxShadow: isSelected
+                  ? `0 0 0 3px ${c.accent}, 3px 4px 0 rgba(36,30,26,0.12)`
+                  : styles.catTile.boxShadow,
+              }}
+            >
+              <span style={styles.catIcon}>{c.icon}</span>
+              <span style={{ ...styles.catGlyph, color: c.accent }}>{c.nameHe}</span>
+              <span style={styles.catIndex}>{String(i + 1).padStart(2, "0")}</span>
+              <span style={styles.catName}>{c.nameLoc[lang] || c.nameLoc.pt}</span>
+              <span style={styles.catCount}>
+                {c.words.length} {t(lang, "wordsAvailable")}
+              </span>
+              {isSelected && (
+                <span style={{ ...styles.selectedCheck, background: c.accent }}>✓</span>
+              )}
+            </button>
+          );
+        })}
+      </div>
+
+      <div style={styles.builderFooter}>
+        {selection.length === 0 ? (
+          <p style={styles.builderHint}>{t(lang, "selectAtLeastOne")}</p>
+        ) : (
+          <>
+            <QuizCountSlider lang={lang} value={quizCount} onChange={setQuizCount} max={totalAvailable} />
+            <p style={styles.builderHint}>
+              {totalWords} {t(lang, "wordsAvailable")}
+            </p>
+          </>
+        )}
+        <button
+          className="action-btn"
+          disabled={selection.length === 0}
+          onClick={onStart}
+          style={{
+            ...styles.quizBtn,
+            background: selection.length === 0 ? "#b8ac93" : "#7C2032",
+            cursor: selection.length === 0 ? "default" : "pointer",
+          }}
+        >
+          {t(lang, "startCombinedQuiz")}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+/* ---------------------------------------------------------
+   Controle deslizante: quantas perguntas no quiz (5 a 50)
+--------------------------------------------------------- */
+function QuizCountSlider({ lang, value, onChange, max }) {
+  const cap = Math.max(MIN_QUIZ_WORDS, Math.min(MAX_QUIZ_WORDS_LIMIT, max || MAX_QUIZ_WORDS_LIMIT));
+  const clamped = Math.min(value, cap);
+  return (
+    <div style={styles.sliderWrap}>
+      <label style={styles.sliderLabel}>
+        {t(lang, "howManyQuestions")}: <strong>{clamped}</strong>
+      </label>
+      <input
+        type="range"
+        min={MIN_QUIZ_WORDS}
+        max={cap}
+        step={5}
+        value={clamped}
+        onChange={(e) => onChange(Number(e.target.value))}
+        style={styles.sliderInput}
+      />
+      <div style={styles.sliderTicks}>
+        <span>{MIN_QUIZ_WORDS}</span>
+        <span>{cap}</span>
+      </div>
+    </div>
+  );
+}
+
+/* ---------------------------------------------------------
+   Tela: baralho de cartas (uma por vez, com deslizar)
+--------------------------------------------------------- */
+function CardDeck({ lang, category, flipped, toggleFlip, deckIndex, setDeckIndexForCat, onBack, onQuiz, quizCount, setQuizCount, studied }) {
+  const total = category.words.length;
+  const index = Math.min(deckIndex, total - 1);
+  const word = category.words[index];
+  const key = category.id + index;
+  const isFlipped = !!flipped[key];
+  const isStudied = studied.has(index);
+
+  const touchRef = React.useRef({ x: 0, active: false });
+
+  const goTo = (newIndex) => {
+    if (newIndex < 0 || newIndex >= total) return;
+    setDeckIndexForCat(newIndex);
+  };
+
+  const onTouchStart = (e) => {
+    touchRef.current = { x: e.touches[0].clientX, active: true };
+  };
+  const onTouchEnd = (e) => {
+    if (!touchRef.current.active) return;
+    const dx = e.changedTouches[0].clientX - touchRef.current.x;
+    touchRef.current.active = false;
+    if (Math.abs(dx) < 40) return;
+    if (dx < 0) goTo(index + 1);
+    else goTo(index - 1);
+  };
+
+  return (
+    <div style={styles.container}>
+      <header style={styles.header}>
+        <button className="back-btn" onClick={onBack} style={styles.backBtn}>
+          &larr; {t(lang, "backToFolders")}
+        </button>
+        <div style={styles.headerRow}>
+          <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
+            <span style={styles.catIconSmall}>{category.icon}</span>
+            <div>
+              <h1 style={{ ...styles.title, fontSize: 28 }}>{category.nameLoc[lang] || category.name}</h1>
+              <p style={styles.subtitle}>
+                {studied.size}/{total} {t(lang, "studied")}
+              </p>
+            </div>
+          </div>
+          <button className="action-btn" onClick={onQuiz} style={{ ...styles.quizBtn, background: category.accent }}>
+            {t(lang, "startQuiz")}
+          </button>
+        </div>
+        <QuizCountSlider lang={lang} value={quizCount} onChange={setQuizCount} max={category.words.length} />
+      </header>
+
+      <div style={styles.deckArea} onTouchStart={onTouchStart} onTouchEnd={onTouchEnd}>
+        {/* cartas decorativas empilhadas atrás */}
+        <div style={{ ...styles.stackCard, transform: "translate(10px, 10px) rotate(4deg)" }} />
+        <div style={{ ...styles.stackCard, transform: "translate(5px, 5px) rotate(-3deg)" }} />
+
+        <div className="card-flip-outer" style={styles.deckFlipOuter} onClick={() => toggleFlip(key, category.id, index)}>
+          <div className={`card-flip-inner ${isFlipped ? "is-flipped" : ""}`}>
+            <div className="card-face" style={{ ...styles.deckFace, borderTop: `8px solid ${category.accent}` }}>
+              {isStudied && <div style={{ ...styles.studiedDot, background: category.accent }} />}
+              <div style={styles.hole} />
+              <div style={styles.deckFrontBody}>
+                <div style={styles.deckFrontEmojiHint}>{word.emoji}</div>
+                {!word.heMasc && (
+                  <>
+                    <div style={styles.deckHebrewWord}>{word.he}</div>
+                    <div style={{ ...styles.deckTranslit, color: category.accent }}>{localizeTr(word.tr, lang)}</div>
+                  </>
+                )}
+
+                {word.binyan && (
+                  <div style={styles.verbExtra}>
+                    <span style={{ ...styles.binyanTag, color: category.accent, borderColor: category.accent }}>
+                      {word.binyan} · {word.binyanTr}
+                    </span>
+                    <div style={styles.verbTensesRow}>
+                      <VerbTenseCell label={t(lang, "past")} he={word.pastHe} tr={localizeTr(word.pastTr, lang)} />
+                      <VerbTenseCell label={t(lang, "present")} he={word.presentHe} tr={localizeTr(word.presentTr, lang)} />
+                      <VerbTenseCell label={t(lang, "future")} he={word.futureHe} tr={localizeTr(word.futureTr, lang)} />
+                    </div>
+                  </div>
+                )}
+
+                {word.heMasc && (
+                  <div style={styles.numberGenderRow}>
+                    <div style={styles.numberGenderCell}>
+                      <span style={styles.numberGenderTag}>{t(lang, "feminine")}</span>
+                      <div style={styles.numberGenderHe}>{word.he}</div>
+                      <div style={{ ...styles.numberGenderTr, color: category.accent }}>{localizeTr(word.tr, lang)}</div>
+                    </div>
+                    <div style={styles.numberGenderCell}>
+                      <span style={styles.numberGenderTag}>{t(lang, "masculine")}</span>
+                      <div style={styles.numberGenderHe}>{word.heMasc}</div>
+                      <div style={{ ...styles.numberGenderTr, color: category.accent }}>{localizeTr(word.trMasc, lang)}</div>
+                    </div>
+                  </div>
+                )}
+              </div>
+              <div style={styles.flipHint}>{t(lang, "tapToFlip")}</div>
+            </div>
+
+            <div className="card-face card-back" style={{ ...styles.deckFace, borderTop: `8px solid ${category.accent}` }}>
+              <div style={styles.hole} />
+              <div style={styles.deckBackBody}>
+                <div style={styles.deckEmoji}>{word.emoji}</div>
+                <div style={styles.deckMeaningsList}>
+                  {LANGUAGES.map((l) => (
+                    <div key={l.code} style={styles.deckMeaningRow}>
+                      <span style={styles.deckMeaningFlag}>{l.flag}</span>
+                      <span style={styles.deckMeaningWord}>{word[l.code]}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+              <div style={styles.flipHint}>{t(lang, "tapToFlip")}</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div style={styles.deckNav}>
+        <button
+          className="action-btn"
+          onClick={() => goTo(index - 1)}
+          disabled={index === 0}
+          style={{ ...styles.deckNavBtn, opacity: index === 0 ? 0.35 : 1 }}
+        >
+          ←
+        </button>
+        <span style={styles.deckCounter}>{t(lang, "cardOf", { n: index + 1, total })}</span>
+        <button
+          className="action-btn"
+          onClick={() => goTo(index + 1)}
+          disabled={index === total - 1}
+          style={{ ...styles.deckNavBtn, opacity: index === total - 1 ? 0.35 : 1 }}
+        >
+          →
+        </button>
+      </div>
+    </div>
+  );
+}
+
+/* ---------------------------------------------------------
+   Célula pequena de tempo verbal (passado / presente / futuro)
+--------------------------------------------------------- */
+function VerbTenseCell({ label, he, tr }) {
+  return (
+    <div style={styles.verbTenseCell}>
+      <span style={styles.verbTenseLabel}>{label}</span>
+      <span style={styles.verbTenseHe}>{he}</span>
+      <span style={styles.verbTenseTr}>{tr}</span>
+    </div>
+  );
+}
+
+/* ---------------------------------------------------------
+   Tela: quiz (individual ou combinado)
+--------------------------------------------------------- */
+function QuizView({ lang, quiz, setQuiz, onFinish, onExit, bestScore }) {
+  if (!quiz) return null;
+  const isCombined = quiz.mode === "combined";
+  const category = !isCombined ? CATEGORY_MAP[quiz.categoryId] : null;
+  const accentColor = isCombined ? "#7C2032" : category.accent;
+  const glyph = isCombined ? "🎲" : category.glyph;
+
+  if (quiz.finished) {
+    const pct = Math.round((quiz.score / quiz.items.length) * 100);
+    return (
+      <div style={styles.container}>
+        <div style={styles.quizResultWrap}>
+          <div style={{ ...styles.headerGlyph, color: accentColor, fontSize: 54 }}>{glyph}</div>
+          <h2 style={styles.resultTitle}>{t(lang, "resultTitle")}</h2>
+          <p style={styles.resultCategory}>
+            {isCombined ? t(lang, "combinedQuizHeader") : category.nameLoc[lang] || category.name}
+          </p>
+          <div style={{ ...styles.resultScore, color: accentColor }}>
+            {quiz.score} / {quiz.items.length}
+          </div>
+          <p style={styles.resultPct}>{pct}%</p>
+          {bestScore && (
+            <p style={styles.resultBest}>
+              {t(lang, "bestResult")}: {bestScore.score}/{bestScore.total}
+            </p>
+          )}
+          <div style={styles.resultActions}>
+            <button
+              className="action-btn"
+              style={{ ...styles.quizBtn, background: accentColor }}
+              onClick={() =>
+                setQuiz(
+                  isCombined
+                    ? {
+                        mode: "combined",
+                        categoryIds: quiz.categoryIds,
+                        count: quiz.count,
+                        items: buildCombinedQuiz(quiz.categoryIds, lang, quiz.count),
+                        index: 0,
+                        score: 0,
+                        selected: null,
+                        finished: false,
+                      }
+                    : {
+                        mode: "single",
+                        categoryId: category.id,
+                        count: quiz.count,
+                        items: buildQuiz(category, lang, quiz.count),
+                        index: 0,
+                        score: 0,
+                        selected: null,
+                        finished: false,
+                      }
+                )
+              }
+            >
+              {t(lang, "redoQuiz")}
+            </button>
+            <button className="back-btn" style={styles.backBtnBig} onClick={onExit}>
+              &larr; {isCombined ? t(lang, "backToHome") : t(lang, "backToCards")}
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  const q = quiz.items[quiz.index];
+  const answered = quiz.selected !== null;
+  const qAccent = isCombined ? q.accent : accentColor;
+
+  const choose = (opt) => {
+    if (answered) return;
+    const correct = opt === q.correct;
+    setQuiz((prev) => ({ ...prev, selected: opt, score: prev.score + (correct ? 1 : 0) }));
+  };
+
+  const next = () => {
+    const isLast = quiz.index + 1 >= quiz.items.length;
+    if (isLast) {
+      onFinish(quiz.score, quiz.items.length);
+      setQuiz((prev) => ({ ...prev, finished: true }));
+    } else {
+      setQuiz((prev) => ({ ...prev, index: prev.index + 1, selected: null }));
+    }
+  };
+
+  return (
+    <div style={styles.container}>
+      <header style={styles.header}>
+        <button className="back-btn" onClick={onExit} style={styles.backBtn}>
+          &larr; {t(lang, "exitQuiz")}
+        </button>
+        <div style={styles.headerRow}>
+          <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
+            <div style={{ ...styles.headerGlyph, color: accentColor, fontSize: 34 }}>{glyph}</div>
+            <div>
+              <h1 style={{ ...styles.title, fontSize: 24 }}>
+                {isCombined ? t(lang, "combinedQuizHeader") : category.nameLoc[lang] || category.name}
+              </h1>
+              <p style={styles.subtitle}>
+                {t(lang, "quizQuestionOf", { n: quiz.index + 1, total: quiz.items.length })} &middot; {t(lang, "points")}: {quiz.score}
+              </p>
+            </div>
+          </div>
+        </div>
+      </header>
+
+      <div style={styles.quizCard}>
+        <div style={styles.quizHebrew}>{q.word.he}</div>
+        <div style={{ ...styles.quizTranslit, color: qAccent }}>{localizeTr(q.word.tr, lang)}</div>
+        <p style={styles.quizPrompt}>{t(lang, "whatIsMeaning")}</p>
+
+        <div style={styles.quizOptions}>
+          {q.options.map((opt) => {
+            let bg = "#FBF6E9";
+            let border = "#d8cba9";
+            let textColor = "#241E1A";
+            if (answered) {
+              if (opt === q.correct) {
+                bg = "#e4f0e2";
+                border = "#4c7a44";
+                textColor = "#2f5233";
+              } else if (opt === quiz.selected) {
+                bg = "#f6e2e2";
+                border = "#a14343";
+                textColor = "#7c2032";
+              }
+            }
+            return (
+              <button
+                key={opt}
+                className="quiz-opt"
+                onClick={() => choose(opt)}
+                style={{
+                  ...styles.quizOptBtn,
+                  background: bg,
+                  borderColor: border,
+                  color: textColor,
+                  cursor: answered ? "default" : "pointer",
+                }}
+              >
+                {opt}
+              </button>
+            );
+          })}
+        </div>
+
+        {answered && (
+          <button
+            className="action-btn"
+            onClick={next}
+            style={{ ...styles.quizBtn, background: qAccent, marginTop: 22 }}
+          >
+            {quiz.index + 1 >= quiz.items.length ? t(lang, "seeResult") : t(lang, "nextQuestion")}
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/* ---------------------------------------------------------
+   Estilos
+--------------------------------------------------------- */
+const INK = "#241E1A";
+const STONE = "#E7DEC3";
+const CARD_FACE = "#FBF6E9";
+
+const GLOBAL_CSS = `
+  @import url('https://fonts.googleapis.com/css2?family=Frank+Ruhl+Libre:wght@400;500;700;900&family=Heebo:wght@300;400;500;700&display=swap');
+  * { box-sizing: border-box; }
+  html, body { margin: 0; }
+  .card-flip-outer { perspective: 1200px; }
+  .card-flip-inner {
+    position: relative;
+    width: 100%;
+    height: 100%;
+    transition: transform 0.5s cubic-bezier(.4,.2,.2,1);
+    transform-style: preserve-3d;
+  }
+  .card-flip-inner.is-flipped { transform: rotateY(180deg); }
+  .card-face {
+    position: absolute;
+    inset: 0;
+    backface-visibility: hidden;
+    -webkit-backface-visibility: hidden;
+    border-radius: 18px;
+  }
+  .card-back { transform: rotateY(180deg); }
+  .cat-tile:hover { transform: translateY(-4px); }
+  .cat-tile { transition: transform 0.2s ease; }
+  .back-btn:hover { opacity: 0.75; }
+  .quiz-opt:hover { filter: brightness(0.97); }
+  .action-btn:hover { filter: brightness(1.08); }
+`;
+
+const styles = {
+  page: {
+    minHeight: "100vh",
+    width: "100%",
+    background: STONE,
+    backgroundImage: "radial-gradient(circle at 1px 1px, rgba(36,30,26,0.06) 1px, transparent 0)",
+    backgroundSize: "18px 18px",
+    fontFamily: "'Heebo', sans-serif",
+    color: INK,
+    padding: "40px 20px 80px",
+  },
+  syncBadge: {
+    position: "fixed",
+    top: 14,
+    right: 18,
+    fontSize: 11.5,
+    color: "#5b5248",
+    background: "#FBF6E9",
+    border: "1px solid #d8cba9",
+    borderRadius: 20,
+    padding: "5px 12px",
+    zIndex: 10,
+  },
+  container: { maxWidth: 1100, margin: "0 auto" },
+
+  langWrap: {
+    minHeight: "80vh",
+    display: "flex",
+    flexDirection: "column",
+    alignItems: "center",
+    justifyContent: "center",
+    textAlign: "center",
+    gap: 6,
+    fontFamily: "'Heebo', sans-serif",
+  },
+  langTitle: {
+    fontFamily: "'Frank Ruhl Libre', serif",
+    fontSize: 28,
+    fontWeight: 700,
+    margin: "16px 0 4px",
+    color: INK,
+  },
+  langSubtitle: { color: "#5b5248", fontSize: 14, marginBottom: 30 },
+  langGrid: {
+    display: "grid",
+    gridTemplateColumns: "repeat(2, 1fr)",
+    gap: 14,
+    width: "min(360px, 80vw)",
+  },
+  langBtn: {
+    background: "#FBF6E9",
+    border: "2px solid #d8cba9",
+    borderRadius: 14,
+    padding: "20px 10px",
+    display: "flex",
+    flexDirection: "column",
+    alignItems: "center",
+    gap: 8,
+    cursor: "pointer",
+    boxShadow: "3px 4px 0 rgba(36,30,26,0.12)",
+  },
+  langFlag: { fontSize: 32 },
+  langLabel: { fontFamily: "'Frank Ruhl Libre', serif", fontWeight: 700, fontSize: 15, color: INK },
+
+  header: { marginBottom: 24 },
+  headerTopRow: {
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "space-between",
+    flexWrap: "wrap",
+    gap: 12,
+    marginBottom: 14,
+  },
+  headerRow: {
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "space-between",
+    flexWrap: "wrap",
+    gap: 14,
+    marginTop: 10,
+  },
+  headerGlyph: {
+    fontFamily: "'Frank Ruhl Libre', serif",
+    fontSize: 46,
+    fontWeight: 900,
+    color: "#7C2032",
+    lineHeight: 1,
+  },
+  title: {
+    fontFamily: "'Frank Ruhl Libre', serif",
+    fontWeight: 700,
+    fontSize: 34,
+    margin: "0 0 2px",
+    letterSpacing: 0.5,
+  },
+  subtitle: { margin: 0, fontSize: 14, color: "#5b5248", letterSpacing: 0.3 },
+  langChip: {
+    background: "#FBF6E9",
+    border: "1.5px solid #d8cba9",
+    borderRadius: 20,
+    padding: "6px 14px",
+    fontSize: 13,
+    fontFamily: "'Heebo', sans-serif",
+    cursor: "pointer",
+    color: INK,
+  },
+  combinedQuizBtn: {
+    border: "none",
+    color: "#FBF6E9",
+    background: "#7C2032",
+    fontFamily: "'Heebo', sans-serif",
+    fontWeight: 700,
+    fontSize: 14,
+    padding: "12px 18px",
+    borderRadius: 10,
+    cursor: "pointer",
+    boxShadow: "2px 3px 0 rgba(36,30,26,0.18)",
+  },
+  backBtn: {
+    background: "none",
+    border: "none",
+    color: "#5b5248",
+    fontFamily: "'Heebo', sans-serif",
+    fontSize: 14,
+    cursor: "pointer",
+    padding: 0,
+    opacity: 0.9,
+  },
+  backBtnBig: {
+    background: "none",
+    border: "none",
+    color: "#5b5248",
+    fontFamily: "'Heebo', sans-serif",
+    fontSize: 15,
+    cursor: "pointer",
+    padding: "10px 0",
+  },
+  quizBtn: {
+    border: "none",
+    color: "#FBF6E9",
+    fontFamily: "'Heebo', sans-serif",
+    fontWeight: 700,
+    fontSize: 14,
+    padding: "11px 20px",
+    borderRadius: 8,
+    cursor: "pointer",
+    boxShadow: "2px 3px 0 rgba(36,30,26,0.18)",
+  },
+
+  grid: {
+    display: "grid",
+    gridTemplateColumns: "repeat(auto-fill, minmax(190px, 1fr))",
+    gap: 18,
+  },
+  catTile: {
+    background: CARD_FACE,
+    border: "2px solid",
+    borderRadius: 12,
+    padding: "18px 18px 18px",
+    display: "flex",
+    flexDirection: "column",
+    alignItems: "flex-start",
+    cursor: "pointer",
+    boxShadow: "3px 4px 0 rgba(36,30,26,0.12)",
+    textAlign: "left",
+    position: "relative",
+    minHeight: 168,
+  },
+  catIcon: { fontSize: 30, marginBottom: 8 },
+  catIconSmall: { fontSize: 30 },
+  catGlyph: {
+    fontFamily: "'Frank Ruhl Libre', serif",
+    fontSize: 16,
+    fontWeight: 700,
+    position: "absolute",
+    top: 16,
+    right: 16,
+    left: 16,
+    opacity: 0.9,
+    textAlign: "right",
+    direction: "rtl",
+    lineHeight: 1.15,
+  },
+  catIndex: { fontSize: 11, color: "#a89c86", letterSpacing: 1, marginBottom: 8 },
+  catName: {
+    fontFamily: "'Frank Ruhl Libre', serif",
+    fontWeight: 700,
+    fontSize: 19,
+    marginBottom: 4,
+  },
+  catCount: { fontSize: 12.5, color: "#5b5248", marginBottom: 10 },
+  progressTrack: { width: "100%", height: 6, borderRadius: 4, background: "#e6dcc0", overflow: "hidden" },
+  progressFill: { height: "100%", borderRadius: 4 },
+  quizBadge: {
+    marginTop: 10,
+    fontSize: 11,
+    fontWeight: 700,
+    border: "1.5px solid",
+    borderRadius: 6,
+    padding: "2px 8px",
+  },
+  selectedCheck: {
+    position: "absolute",
+    bottom: 14,
+    right: 14,
+    width: 24,
+    height: 24,
+    borderRadius: "50%",
+    color: "#fff",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    fontSize: 13,
+    fontWeight: 700,
+  },
+
+  builderActions: { display: "flex", gap: 16, marginBottom: 14 },
+  builderLinkBtn: {
+    background: "none",
+    border: "none",
+    color: "#7C2032",
+    fontFamily: "'Heebo', sans-serif",
+    fontSize: 13,
+    fontWeight: 700,
+    cursor: "pointer",
+    padding: 0,
+    textDecoration: "underline",
+  },
+  builderFooter: {
+    marginTop: 26,
+    display: "flex",
+    flexDirection: "column",
+    alignItems: "center",
+    gap: 10,
+  },
+  builderHint: { fontSize: 13, color: "#5b5248", margin: 0 },
+
+  sliderWrap: {
+    width: "min(320px, 90vw)",
+    display: "flex",
+    flexDirection: "column",
+    alignItems: "center",
+    gap: 4,
+    margin: "10px auto 4px",
+  },
+  sliderLabel: { fontSize: 13, color: "#5b5248" },
+  sliderInput: { width: "100%", accentColor: "#7C2032" },
+  sliderTicks: {
+    width: "100%",
+    display: "flex",
+    justifyContent: "space-between",
+    fontSize: 10.5,
+    color: "#a89c86",
+  },
+
+  deckArea: {
+    position: "relative",
+    maxWidth: 340,
+    margin: "10px auto 0",
+    aspectRatio: "3 / 4.2",
+  },
+  stackCard: {
+    position: "absolute",
+    inset: 0,
+    background: "#FBF6E9",
+    borderRadius: 18,
+    boxShadow: "2px 3px 0 rgba(36,30,26,0.10)",
+    border: "1px solid #e3d7b8",
+  },
+  deckFlipOuter: { width: "100%", height: "100%", cursor: "pointer", position: "relative" },
+  deckFace: {
+    background: CARD_FACE,
+    borderRadius: 18,
+    boxShadow: "4px 6px 0 rgba(36,30,26,0.16)",
+    display: "flex",
+    flexDirection: "column",
+    alignItems: "center",
+    justifyContent: "center",
+    padding: "26px 20px",
+  },
+  studiedDot: { position: "absolute", top: 18, left: 18, width: 10, height: 10, borderRadius: "50%" },
+  hole: {
+    position: "absolute",
+    top: 16,
+    right: 20,
+    width: 12,
+    height: 12,
+    borderRadius: "50%",
+    background: STONE,
+    boxShadow: "inset 1px 1px 2px rgba(0,0,0,0.25)",
+  },
+  deckFrontBody: {
+    display: "flex",
+    flexDirection: "column",
+    alignItems: "center",
+    justifyContent: "center",
+    flex: 1,
+    gap: 16,
+  },
+  deckFrontEmojiHint: { fontSize: 30, opacity: 0.55, marginBottom: 2 },
+  deckHebrewWord: {
+    fontFamily: "'Frank Ruhl Libre', serif",
+    fontWeight: 700,
+    fontSize: 42,
+    textAlign: "center",
+    direction: "rtl",
+  },
+  deckTranslit: { fontSize: 18, fontStyle: "italic", fontWeight: 500, textAlign: "center" },
+
+  verbExtra: {
+    display: "flex",
+    flexDirection: "column",
+    alignItems: "center",
+    gap: 10,
+    marginTop: 4,
+    width: "100%",
+  },
+  binyanTag: {
+    fontSize: 12,
+    fontWeight: 700,
+    border: "1.5px solid",
+    borderRadius: 8,
+    padding: "3px 10px",
+    fontFamily: "'Frank Ruhl Libre', serif",
+    direction: "rtl",
+  },
+  verbTensesRow: {
+    display: "flex",
+    justifyContent: "center",
+    gap: 10,
+    width: "100%",
+  },
+  verbTenseCell: {
+    display: "flex",
+    flexDirection: "column",
+    alignItems: "center",
+    gap: 2,
+    background: "#f3ead1",
+    borderRadius: 8,
+    padding: "6px 8px",
+    minWidth: 68,
+  },
+  verbTenseLabel: { fontSize: 9.5, color: "#8a7c62", letterSpacing: 0.3, textTransform: "uppercase" },
+  verbTenseHe: { fontFamily: "'Frank Ruhl Libre', serif", fontSize: 16, fontWeight: 700, direction: "rtl" },
+  verbTenseTr: { fontSize: 10, fontStyle: "italic", color: "#5b5248" },
+
+  numberGenderRow: {
+    display: "flex",
+    justifyContent: "center",
+    gap: 16,
+    marginTop: 6,
+    width: "100%",
+  },
+  numberGenderCell: {
+    display: "flex",
+    flexDirection: "column",
+    alignItems: "center",
+    gap: 4,
+    background: "#f3ead1",
+    borderRadius: 10,
+    padding: "10px 14px",
+    minWidth: 100,
+  },
+  numberGenderTag: { fontSize: 10, color: "#8a7c62", letterSpacing: 0.5, textTransform: "uppercase" },
+  numberGenderHe: { fontFamily: "'Frank Ruhl Libre', serif", fontSize: 24, fontWeight: 700, direction: "rtl" },
+  numberGenderTr: { fontSize: 12, fontStyle: "italic", fontWeight: 500 },
+
+  deckBackBody: {
+    display: "flex",
+    flexDirection: "column",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 14,
+    flex: 1,
+  },
+  deckEmoji: { fontSize: 56, lineHeight: 1, marginBottom: 4 },
+  deckMeaningsList: {
+    display: "flex",
+    flexDirection: "column",
+    gap: 8,
+    width: "100%",
+    alignItems: "center",
+  },
+  deckMeaningRow: {
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 10,
+    width: "100%",
+  },
+  deckMeaningFlag: { fontSize: 18, minWidth: 42, textAlign: "center" },
+  deckMeaningWord: {
+    fontFamily: "'Frank Ruhl Libre', serif",
+    fontSize: 20,
+    fontWeight: 600,
+    textAlign: "left",
+    minWidth: 120,
+  },
+  flipHint: { position: "absolute", bottom: 14, fontSize: 11, color: "#a89c86", letterSpacing: 0.5 },
+
+  deckNav: {
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 24,
+    marginTop: 22,
+  },
+  deckNavBtn: {
+    border: "none",
+    background: "#7C2032",
+    color: "#FBF6E9",
+    width: 46,
+    height: 46,
+    borderRadius: "50%",
+    fontSize: 20,
+    cursor: "pointer",
+    boxShadow: "2px 3px 0 rgba(36,30,26,0.18)",
+  },
+  deckCounter: { fontSize: 13, color: "#5b5248", minWidth: 130, textAlign: "center" },
+
+  quizCard: {
+    background: CARD_FACE,
+    borderRadius: 16,
+    boxShadow: "4px 6px 0 rgba(36,30,26,0.14)",
+    padding: "40px 30px",
+    maxWidth: 480,
+    margin: "0 auto",
+    display: "flex",
+    flexDirection: "column",
+    alignItems: "center",
+    textAlign: "center",
+  },
+  quizHebrew: { fontFamily: "'Frank Ruhl Libre', serif", fontWeight: 700, fontSize: 40, direction: "rtl" },
+  quizTranslit: { fontSize: 15, fontStyle: "italic", fontWeight: 500, marginTop: 6 },
+  quizPrompt: { fontSize: 13.5, color: "#5b5248", marginTop: 22, marginBottom: 16, letterSpacing: 0.3 },
+  quizOptions: { display: "flex", flexDirection: "column", gap: 10, width: "100%" },
+  quizOptBtn: {
+    border: "2px solid",
+    borderRadius: 10,
+    padding: "12px 16px",
+    fontFamily: "'Frank Ruhl Libre', serif",
+    fontSize: 16,
+    fontWeight: 500,
+    textAlign: "left",
+  },
+
+  quizResultWrap: {
+    maxWidth: 420,
+    margin: "60px auto 0",
+    display: "flex",
+    flexDirection: "column",
+    alignItems: "center",
+    textAlign: "center",
+    gap: 4,
+  },
+  resultTitle: { fontFamily: "'Frank Ruhl Libre', serif", fontSize: 24, fontWeight: 700, margin: "10px 0 0" },
+  resultCategory: { color: "#5b5248", fontSize: 14, margin: "2px 0 20px" },
+  resultScore: { fontFamily: "'Frank Ruhl Libre', serif", fontSize: 52, fontWeight: 900 },
+  resultPct: { fontSize: 14, color: "#5b5248", marginTop: 4 },
+  resultBest: { fontSize: 13, color: "#a89c86", marginTop: 6 },
+  resultActions: { display: "flex", flexDirection: "column", gap: 6, alignItems: "center", marginTop: 26 },
+};
+
+
+  const root = ReactDOM.createRoot(document.getElementById("root"));
+  root.render(<App />);
+} catch (err) {
+  var box = document.getElementById("boot-error");
+  if (box) {
+    box.style.display = "block";
+    box.textContent = "Erro ao iniciar o app:\n\n" + (err && err.message ? err.message : String(err));
+  }
+  console.error(err);
+}
+</script>
+</body>
+</html>
